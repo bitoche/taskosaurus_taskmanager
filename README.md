@@ -21,6 +21,8 @@
 
 ## 📌 Версионирование (Единственный источник правды)
 
+Подробный архитектурный регламент и правила ведения проекта описаны в [ARCHITECTURE.md](./ARCHITECTURE.md) и [AGENTS.md](./AGENTS.md).
+
 Версия проекта задается **строго в одном месте**:
 - [pyproject.toml](file:///c:/Users/bitoche/Desktop/project/pyproject.toml) (`version = "2.0.0"`).
 
