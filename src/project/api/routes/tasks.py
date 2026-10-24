@@ -1,140 +1,175 @@
-from datetime import UTC, date, datetime
+"""Маршруты API для управления задачами."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from collections.abc import Sequence
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from project.core.database import get_session
 from project.models import Task
 from project.schemas import TaskCreate, TaskRead, TaskUpdate
+from project.services.task_service import TaskService
 
 router = APIRouter()
 
-COMPLETED_STATUS_ID = 2
-ACTIVE_STATUS_ID = 1
+
+def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskService:
+    """Внедрение зависимости сервиса задач.
+
+    Args:
+        session: Сессия SQLAlchemy из контекста запроса.
+
+    Returns:
+        Экземпляр TaskService.
+    """
+    return TaskService(session)
 
 
-def _parse_date(val: date | str | None) -> date | None:
-    if val is None or isinstance(val, date):
-        return val
-    try:
-        return date.fromisoformat(val[:10])
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {val}. Expected YYYY-MM-DD")
-
-
-def _parse_datetime(val: datetime | str | None) -> datetime | None:
-    if val is None or isinstance(val, datetime):
-        return val
-    try:
-        clean = val.replace("T", " ")
-        if len(clean) > 19:
-            clean = clean[:19]
-        return datetime.fromisoformat(clean)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid datetime format: {val}. Expected YYYY-MM-DD HH:MM:SS or ISO",
-        )
-
-
-@router.get("/", response_model=list[TaskRead])
+@router.get(
+    "/",
+    response_model=list[TaskRead],
+    status_code=status.HTTP_200_OK,
+    summary="Получить список задач",
+    description="Возвращает список всех задач. Поддерживает фильтрацию по диапазону дат выполнения (due_date).",
+    response_description="Список задач",
+)
 async def list_tasks(
-    date_from: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
-    date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
-    session: AsyncSession = Depends(get_session),
-):
-    """Get tasks, optionally filtered by date range."""
-    stmt = select(Task).order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
+    date_from: str | None = Query(
+        None,
+        description="Начальная дата в формате YYYY-MM-DD",
+        examples=["2026-10-01"],
+    ),
+    date_to: str | None = Query(
+        None,
+        description="Конечная дата в формате YYYY-MM-DD",
+        examples=["2026-10-31"],
+    ),
+    service: TaskService = Depends(get_task_service),
+) -> Sequence[Task]:
+    """Получает список задач с опциональной фильтрацией по диапазону дат."""
+    try:
+        return await service.list_tasks(date_from=date_from, date_to=date_to)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некорректный формат даты: {err}. Ожидается YYYY-MM-DD",
+        ) from err
 
-    if date_from and date_to:
-        d_from = _parse_date(date_from)
-        d_to = _parse_date(date_to)
-        stmt = stmt.where(Task.due_date >= d_from, Task.due_date <= d_to)
 
-    result = await session.execute(stmt)
-    return result.scalars().all()
-
-
-@router.get("/between", response_model=list[TaskRead])
+@router.get(
+    "/between",
+    response_model=list[TaskRead],
+    status_code=status.HTTP_200_OK,
+    summary="Получить задачи за период (совместимость со старым API)",
+    description="Эндпоинт обратной совместимости. Возвращает задачи за указанный диапазон дат.",
+    response_description="Список задач в диапазоне",
+)
 async def list_tasks_between(
-    date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
-    session: AsyncSession = Depends(get_session),
-):
-    """Get tasks within a date range (compatible with legacy /between endpoint)."""
-    return await list_tasks(date_from=date_from, date_to=date_to, session=session)
+    date_from: str = Query(
+        ...,
+        description="Начальная дата (YYYY-MM-DD)",
+        examples=["2026-10-01"],
+    ),
+    date_to: str = Query(
+        ...,
+        description="Конечная дата (YYYY-MM-DD)",
+        examples=["2026-10-31"],
+    ),
+    service: TaskService = Depends(get_task_service),
+) -> Sequence[Task]:
+    """Возвращает задачи в диапазоне дат (алиас эндпоинта /between)."""
+    return await list_tasks(date_from=date_from, date_to=date_to, service=service)
 
 
-@router.get("/{task_id}", response_model=TaskRead)
-async def get_task(task_id: int, session: AsyncSession = Depends(get_session)):
-    """Get a single task by ID."""
-    task = await session.get(Task, task_id)
+@router.get(
+    "/{task_id}",
+    response_model=TaskRead,
+    status_code=status.HTTP_200_OK,
+    summary="Получить задачу по ID",
+    description="Возвращает детальную информацию о конкретной задаче.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Задача не найдена"}},
+)
+async def get_task(
+    task_id: int,
+    service: TaskService = Depends(get_task_service),
+) -> Task:
+    """Ищет и возвращает задачу по её первичному ключу."""
+    task = await service.get_by_id(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Задача с ID {task_id} не найдена",
+        )
     return task
 
 
-@router.post("/", response_model=TaskRead, status_code=201)
+@router.post(
+    "/",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать новую задачу",
+    description="Создает задачу с переданными параметрами и возвращает созданный объект.",
+    response_description="Созданная задача",
+)
 async def create_task(
     body: TaskCreate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Create a new task."""
-    data = body.model_dump(exclude_unset=True)
-    if "due_date" in data:
-        data["due_date"] = _parse_date(data["due_date"])
-
-    task = Task(**data)
-    session.add(task)
-    await session.commit()
-    await session.refresh(task)
-    return task
+    service: TaskService = Depends(get_task_service),
+) -> Task:
+    """Создает новую задачу."""
+    try:
+        return await service.create(body)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка валидации данных: {err}",
+        ) from err
 
 
-@router.put("/{task_id}", response_model=TaskRead)
+@router.put(
+    "/{task_id}",
+    response_model=TaskRead,
+    status_code=status.HTTP_200_OK,
+    summary="Обновить задачу",
+    description="Обновляет переданные поля задачи. Автоматически управляет статусом и датой закрытия.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Задача не найдена"}},
+)
 async def update_task(
     task_id: int,
     body: TaskUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Update a task. Preserves completion and status business logic."""
-    task = await session.get(Task, task_id)
+    service: TaskService = Depends(get_task_service),
+) -> Task:
+    """Обновляет задачу по идентификатору."""
+    task = await service.get_by_id(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    data = body.model_dump(exclude_unset=True)
-
-    if "due_date" in data:
-        data["due_date"] = _parse_date(data["due_date"])
-    if "closed_dttm" in data:
-        data["closed_dttm"] = _parse_datetime(data["closed_dttm"])
-
-    # If closed_dttm is provided, mark status as completed (2)
-    if data.get("closed_dttm") is not None:
-        data["task_status"] = COMPLETED_STATUS_ID
-
-    # Status transitions
-    if "task_status" in data and data["task_status"] is not None:
-        if data["task_status"] == ACTIVE_STATUS_ID:
-            data["closed_dttm"] = None
-        elif data["task_status"] == COMPLETED_STATUS_ID:
-            if task.closed_dttm is None and data.get("closed_dttm") is None:
-                data["closed_dttm"] = datetime.now(UTC).replace(tzinfo=None)
-
-    for key, value in data.items():
-        setattr(task, key, value)
-
-    await session.commit()
-    await session.refresh(task)
-    return task
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Задача с ID {task_id} не найдена",
+        )
+    try:
+        return await service.update(task, body)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка в формате переданных дат: {err}",
+        ) from err
 
 
-@router.delete("/{task_id}", status_code=204)
-async def delete_task(task_id: int, session: AsyncSession = Depends(get_session)):
-    """Delete a task and its comments."""
-    task = await session.get(Task, task_id)
+@router.delete(
+    "/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить задачу",
+    description="Удаляет задачу и все связанные с ней комментарии.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Задача не найдена"}},
+)
+async def delete_task(
+    task_id: int,
+    service: TaskService = Depends(get_task_service),
+) -> None:
+    """Удаляет задачу по её идентификатору."""
+    task = await service.get_by_id(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    await session.delete(task)
-    await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Задача с ID {task_id} не найдена",
+        )
+    await service.delete(task)

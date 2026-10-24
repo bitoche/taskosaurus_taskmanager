@@ -1,19 +1,33 @@
+"""Главный модуль запуска и конфигурации FastAPI приложения.
+
+Содержит:
+- Создание и настройку экземпляра FastAPI.
+- Настройку промежуточного ПО CORS.
+- Регистрацию глобальных обработчиков доменных ошибок.
+- Управление жизненным циклом (lifespan): инициализация схемы БД и закрытие пула соединений.
+"""
+
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from project.api.router import api_router
 from project.core.config import settings
 from project.core.database import async_session_factory, engine
+from project.core.exceptions import EntityNotFoundError
 from project.models.base import Base
 
 
-async def _seed_statuses() -> None:
-    """Insert default task statuses if they don't exist."""
+async def _seed_initial_statuses() -> None:
+    """Заполняет справочник начальными статусами задач ('active', 'completed').
+
+    Использует идемпотентную вставку для PostgreSQL и SQLite.
+    """
     async with async_session_factory() as session:
-        # Check dialect: PostgreSQL supports ON CONFLICT, SQLite supports INSERT OR IGNORE
         dialect_name = engine.dialect.name
         if dialect_name == "postgresql":
             sql = (
@@ -28,25 +42,49 @@ async def _seed_statuses() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: create tables & seed initial data
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Управляет жизненным циклом приложения FastAPI.
+
+    Выполняет инициализацию при старте:
+    - Создает необходимые таблицы, если они отсутствуют.
+    - Наполняет справочник статусов.
+
+    Выполняет завершение при остановке:
+    - Корректно закрывает пул соединений с базой данных.
+
+    Args:
+        app: Экземпляр приложения FastAPI.
+
+    Yields:
+        None во время работы приложения.
+    """
+    # Старт приложения
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await _seed_statuses()
+    await _seed_initial_statuses()
+
     yield
-    # Shutdown: cleanly dispose connection pool
+
+    # Завершение работы приложения
     await engine.dispose()
 
 
 def create_app() -> FastAPI:
+    """Фабрика создания и конфигурирования экземпляра FastAPI.
+
+    Returns:
+        Сконфигурированный объект FastAPI.
+    """
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        debug=settings.debug,
+        description="Асинхронный микросервис календаря и управления задачами на FastAPI и PostgreSQL.",
+        docs_url="/docs",
+        redoc_url="/redoc",
         lifespan=lifespan,
     )
 
-    # Enable CORS for frontend integration
+    # Настройка CORS для работы с SPA (React/Vite)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -55,7 +93,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Глобальный перехват доменных исключений 'не найдено' (Best Practice)
+    @app.exception_handler(EntityNotFoundError)
+    async def entity_not_found_handler(request: Request, exc: EntityNotFoundError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": exc.message},
+        )
+
+    # Подключение корневого роутера
     app.include_router(api_router, prefix="/api")
+
     return app
 
 

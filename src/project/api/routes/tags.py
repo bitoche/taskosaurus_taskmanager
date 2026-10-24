@@ -1,97 +1,146 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+"""Маршруты API для управления тегами и их назначением на задачи."""
+
+from collections.abc import Sequence
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from project.core.database import get_session
 from project.models import TaskTag, TaskTagXTask
 from project.schemas import TagAssign, TagCreate, TagRead, TagUpdate, TagWithTasks
+from project.services.tag_service import TagService
 
 router = APIRouter()
 
 
-@router.get("/", response_model=list[TagRead])
-async def get_all_tags(session: AsyncSession = Depends(get_session)):
-    """Get all tags."""
-    result = await session.execute(select(TaskTag))
-    return result.scalars().all()
+def get_tag_service(session: AsyncSession = Depends(get_session)) -> TagService:
+    """Внедрение зависимости сервиса тегов.
+
+    Args:
+        session: Сессия SQLAlchemy из контекста запроса.
+
+    Returns:
+        Экземпляр TagService.
+    """
+    return TagService(session)
 
 
-@router.get("/tasks", response_model=list[TagWithTasks])
-async def get_all_tags_with_tasks(session: AsyncSession = Depends(get_session)):
-    """Get all tag ↔ task assignments."""
-    result = await session.execute(select(TaskTagXTask))
-    return result.scalars().all()
+@router.get(
+    "/",
+    response_model=list[TagRead],
+    status_code=status.HTTP_200_OK,
+    summary="Получить все теги",
+    description="Возвращает справочник всех существующих тегов.",
+    response_description="Список тегов",
+)
+async def get_all_tags(
+    service: TagService = Depends(get_tag_service),
+) -> Sequence[TaskTag]:
+    """Возвращает все теги."""
+    return await service.list_all()
 
 
-@router.post("/", response_model=TagRead, status_code=201)
+@router.get(
+    "/tasks",
+    response_model=list[TagWithTasks],
+    status_code=status.HTTP_200_OK,
+    summary="Получить связи тегов с задачами",
+    description="Возвращает список всех привязок тегов к задачам.",
+    response_description="Список связей тег-задача",
+)
+async def get_all_tags_with_tasks(
+    service: TagService = Depends(get_tag_service),
+) -> Sequence[TaskTagXTask]:
+    """Возвращает все ассоциации между тегами и задачами."""
+    return await service.list_assignments()
+
+
+@router.post(
+    "/",
+    response_model=TagRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать новый тег",
+    description="Добавляет новый тег в справочник.",
+    response_description="Созданный тег",
+)
 async def create_tag(
     body: TagCreate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Create a new tag."""
-    tag = TaskTag(**body.model_dump())
-    session.add(tag)
-    await session.commit()
-    await session.refresh(tag)
-    return tag
+    service: TagService = Depends(get_tag_service),
+) -> TaskTag:
+    """Создает новый тег."""
+    return await service.create(body)
 
 
-@router.post("/assign", response_model=TagWithTasks, status_code=201)
+@router.post(
+    "/assign",
+    response_model=TagWithTasks,
+    status_code=status.HTTP_201_CREATED,
+    summary="Привязать тег к задаче",
+    description="Назначает тег на указанную задачу.",
+    response_description="Созданная связь",
+)
 async def assign_tag_to_task(
     body: TagAssign,
-    session: AsyncSession = Depends(get_session),
-):
-    """Assign a tag to a task."""
-    link = TaskTagXTask(task_tag_id=body.task_tag_id, task_id=body.task_id)
-    session.add(link)
-    await session.commit()
-    await session.refresh(link)
-    return link
+    service: TagService = Depends(get_tag_service),
+) -> TaskTagXTask:
+    """Назначает тег на задачу."""
+    return await service.assign_to_task(body)
 
 
-@router.put("/{task_tag_id}", response_model=TagRead)
+@router.put(
+    "/{task_tag_id}",
+    response_model=TagRead,
+    status_code=status.HTTP_200_OK,
+    summary="Изменить тег",
+    description="Обновляет цвет и/или название тега.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Тег не найден"}},
+)
 async def update_tag(
     task_tag_id: int,
     body: TagUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Update a tag."""
-    tag = await session.get(TaskTag, task_tag_id)
+    service: TagService = Depends(get_tag_service),
+) -> TaskTag:
+    """Обновляет параметры тега."""
+    tag = await service.get_by_id(task_tag_id)
     if tag is None:
-        raise HTTPException(status_code=404, detail="Tag not found")
-
-    for key, value in body.model_dump(exclude_unset=True).items():
-        setattr(tag, key, value)
-
-    await session.commit()
-    await session.refresh(tag)
-    return tag
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Тег с ID {task_tag_id} не найден",
+        )
+    return await service.update(tag, body)
 
 
-@router.delete("/unassign/{task_tag_id}/task/{task_id}", status_code=204)
+@router.delete(
+    "/unassign/{task_tag_id}/task/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Отвязать тег от задачи",
+    description="Удаляет привязку конкретного тега к конкретной задаче.",
+)
 async def unassign_tag_from_task(
     task_tag_id: int,
     task_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Remove a tag from a task."""
-    await session.execute(
-        delete(TaskTagXTask).where(
-            TaskTagXTask.task_tag_id == task_tag_id,
-            TaskTagXTask.task_id == task_id,
-        )
-    )
-    await session.commit()
+    service: TagService = Depends(get_tag_service),
+) -> None:
+    """Удаляет связь тега с задачей."""
+    await service.unassign_from_task(tag_id=task_tag_id, task_id=task_id)
 
 
-@router.delete("/{task_tag_id}", status_code=204)
+@router.delete(
+    "/{task_tag_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить тег глобально",
+    description="Удаляет тег из системы и каскадно снимает его со всех задач.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Тег не найден"}},
+)
 async def delete_tag(
     task_tag_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete a tag globally (cascade removes assignments)."""
-    tag = await session.get(TaskTag, task_tag_id)
+    service: TagService = Depends(get_tag_service),
+) -> None:
+    """Удаляет тег."""
+    tag = await service.get_by_id(task_tag_id)
     if tag is None:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    await session.delete(tag)
-    await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Тег с ID {task_tag_id} не найден",
+        )
+    await service.delete(tag)

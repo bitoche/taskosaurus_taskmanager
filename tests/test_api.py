@@ -1,20 +1,24 @@
+"""Интеграционные тесты для проверки всех эндпоинтов REST API."""
+
 import pytest
 from httpx import AsyncClient
 
 
 @pytest.mark.anyio
-async def test_health(client: AsyncClient):
+async def test_health(client: AsyncClient) -> None:
+    """Проверка доступности эндпоинта /api/health."""
     resp = await client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
 
 
 @pytest.mark.anyio
-async def test_tasks_crud_and_status_logic(client: AsyncClient):
-    # 1. Create task
+async def test_tasks_crud_and_status_logic(client: AsyncClient) -> None:
+    """Комплексная проверка CRUD задач и бизнес-логики переходов статусов."""
+    # 1. Создание задачи
     payload = {
-        "title": "Migrate to PostgreSQL",
-        "description": "Port DuckDB to PostgreSQL with FastAPI",
+        "title": "Миграция на PostgreSQL",
+        "description": "Перенос DuckDB на PostgreSQL с FastAPI",
         "due_date": "2026-10-30",
         "link_to_taskmanager": "https://github.com/bitoche/taskmanager",
     }
@@ -27,85 +31,87 @@ async def test_tasks_crud_and_status_logic(client: AsyncClient):
     assert task["task_status"] == 1
     assert task["closed_dttm"] is None
 
-    # 2. Get task by ID
+    # 2. Получение задачи по ID
     resp = await client.get(f"/api/tasks/{task_id}")
     assert resp.status_code == 200
     assert resp.json()["task_id"] == task_id
 
-    # 3. Filter tasks by date range
+    # 3. Фильтрация задач по диапазону дат
     resp = await client.get("/api/tasks/?date_from=2026-10-01&date_to=2026-10-31")
     assert resp.status_code == 200
     tasks = resp.json()
     assert any(t["task_id"] == task_id for t in tasks)
 
-    # Legacy /between route
+    # 4. Проверка устаревшего маршрута /between
     resp = await client.get("/api/tasks/between?date_from=2026-10-01&date_to=2026-10-31")
     assert resp.status_code == 200
     assert any(t["task_id"] == task_id for t in resp.json())
 
-    # 4. Mark task as completed (status 2) -> closed_dttm should be auto-set
+    # 5. Завершение задачи (status 2) -> closed_dttm должно выставиться автоматически
     resp = await client.put(f"/api/tasks/{task_id}", json={"task_status": 2})
     assert resp.status_code == 200
     updated = resp.json()
     assert updated["task_status"] == 2
     assert updated["closed_dttm"] is not None
 
-    # 5. Re-open task (status 1) -> closed_dttm should be cleared
+    # 6. Повторное открытие задачи (status 1) -> closed_dttm должно сброситься в None
     resp = await client.put(f"/api/tasks/{task_id}", json={"task_status": 1})
     assert resp.status_code == 200
     reopened = resp.json()
     assert reopened["task_status"] == 1
     assert reopened["closed_dttm"] is None
 
-    # 6. Delete task
+    # 7. Удаление задачи
     resp = await client.delete(f"/api/tasks/{task_id}")
     assert resp.status_code == 204
 
-    # 7. Confirm 404
+    # 8. Проверка отсутствия после удаления
     resp = await client.get(f"/api/tasks/{task_id}")
     assert resp.status_code == 404
 
 
 @pytest.mark.anyio
-async def test_comments_flow(client: AsyncClient):
-    # Create task first
-    task_resp = await client.post("/api/tasks/", json={"title": "Commented Task"})
+async def test_comments_flow(client: AsyncClient) -> None:
+    """Проверка жизненного цикла комментариев к задаче."""
+    # Создание задачи
+    task_resp = await client.post("/api/tasks/", json={"title": "Тест комментариев"})
     task_id = task_resp.json()["task_id"]
 
-    # Add comment
+    # Добавление комментария
     c_resp = await client.post(
         "/api/tasks/comment",
-        json={"task_id": task_id, "text": "Initial feedback"},
+        json={"task_id": task_id, "text": "Первый комментарий"},
     )
     assert c_resp.status_code == 201
     comment = c_resp.json()
     comment_id = comment["comment_id"]
-    assert comment["text"] == "Initial feedback"
+    assert comment["text"] == "Первый комментарий"
 
-    # Get task comments
+    # Получение списка комментариев
     list_resp = await client.get(f"/api/tasks/{task_id}/comments")
     assert list_resp.status_code == 200
     assert len(list_resp.json()) == 1
 
-    # Update comment
+    # Редактирование комментария
     upd_resp = await client.put(
         f"/api/tasks/comment/{comment_id}",
-        json={"text": "Updated feedback"},
+        json={"text": "Обновленный комментарий"},
     )
     assert upd_resp.status_code == 200
-    assert upd_resp.json()["text"] == "Updated feedback"
+    assert upd_resp.json()["text"] == "Обновленный комментарий"
 
-    # Delete comment
+    # Удаление комментария
     del_resp = await client.delete(f"/api/tasks/comment/delete/{comment_id}")
     assert del_resp.status_code == 204
 
-    # Cleanup task
+    # Очистка задачи
     await client.delete(f"/api/tasks/{task_id}")
 
 
 @pytest.mark.anyio
-async def test_tags_and_assignment(client: AsyncClient):
-    # Create tag
+async def test_tags_and_assignment(client: AsyncClient) -> None:
+    """Проверка создания тегов и их привязки к задачам."""
+    # Создание тега
     tag_resp = await client.post(
         "/api/task_tags/",
         json={"tag_text": "Backend", "tag_color": "#ff5500"},
@@ -113,41 +119,42 @@ async def test_tags_and_assignment(client: AsyncClient):
     assert tag_resp.status_code == 201
     tag_id = tag_resp.json()["task_tag_id"]
 
-    # Create task
-    task_resp = await client.post("/api/tasks/", json={"title": "Tag test"})
+    # Создание задачи
+    task_resp = await client.post("/api/tasks/", json={"title": "Тест тегов"})
     task_id = task_resp.json()["task_id"]
 
-    # Assign tag
+    # Привязка тега к задаче
     assign_resp = await client.post(
         "/api/task_tags/assign",
         json={"task_tag_id": tag_id, "task_id": task_id},
     )
     assert assign_resp.status_code == 201
 
-    # Check assignment list
+    # Проверка списка связей
     assignments = await client.get("/api/task_tags/tasks")
     assert assignments.status_code == 200
     assert any(a["task_tag_id"] == tag_id and a["task_id"] == task_id for a in assignments.json())
 
-    # Unassign
+    # Снятие тега с задачи
     unassign_resp = await client.delete(f"/api/task_tags/unassign/{tag_id}/task/{task_id}")
     assert unassign_resp.status_code == 204
 
-    # Delete tag globally
+    # Глобальное удаление тега
     del_tag = await client.delete(f"/api/task_tags/{tag_id}")
     assert del_tag.status_code == 204
 
-    # Cleanup
+    # Очистка задачи
     await client.delete(f"/api/tasks/{task_id}")
 
 
 @pytest.mark.anyio
-async def test_priorities_flow(client: AsyncClient):
-    # Create priority
+async def test_priorities_flow(client: AsyncClient) -> None:
+    """Проверка жизненного цикла приоритетов и безопасного обнуления при удалении."""
+    # Создание приоритета
     p_resp = await client.post(
         "/api/priority/",
         json={
-            "priority_name": "Critical",
+            "priority_name": "Критический",
             "priority_color": "#ff0000",
             "priority_sorting_weight": 10,
         },
@@ -155,33 +162,34 @@ async def test_priorities_flow(client: AsyncClient):
     assert p_resp.status_code == 201
     p_id = p_resp.json()["priority_id"]
 
-    # List priorities
+    # Получение списка приоритетов
     list_resp = await client.get("/api/priority/")
     assert list_resp.status_code == 200
     assert any(p["priority_id"] == p_id for p in list_resp.json())
 
-    # Create task with this priority
+    # Создание задачи с этим приоритетом
     task_resp = await client.post(
         "/api/tasks/",
-        json={"title": "Urgent task", "task_priority_id": p_id},
+        json={"title": "Срочная задача", "task_priority_id": p_id},
     )
     task_id = task_resp.json()["task_id"]
     assert task_resp.json()["task_priority_id"] == p_id
 
-    # Delete priority -> task priority should be set to None
+    # Удаление приоритета -> у задачи приоритет должен обнулиться в None
     del_p = await client.delete(f"/api/priority/{p_id}")
     assert del_p.status_code == 204
 
-    # Verify task priority is cleared
+    # Проверка обнуления
     check_task = await client.get(f"/api/tasks/{task_id}")
     assert check_task.json()["task_priority_id"] is None
 
-    # Cleanup
+    # Очистка задачи
     await client.delete(f"/api/tasks/{task_id}")
 
 
 @pytest.mark.anyio
-async def test_remote_db_stubs(client: AsyncClient):
+async def test_remote_db_stubs(client: AsyncClient) -> None:
+    """Проверка работоспособности эндпоинтов-заглушек синхронизации для webui."""
     resp = await client.get("/api/remote_db/check_updates")
     assert resp.status_code == 200
     assert resp.json()["updates"] is False

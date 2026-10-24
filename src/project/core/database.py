@@ -1,14 +1,52 @@
+"""Модуль управления подключением к базе данных и сессиями SQLAlchemy.
+
+Предоставляет асинхронный движок (AsyncEngine), фабрику сессий
+и зависимость FastAPI для безопасной работы с сессиями базы данных.
+"""
+
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from project.core.config import settings
 
-engine = create_async_engine(settings.database_url, echo=settings.debug)
-async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+# Асинхронный движок с пулом соединений и предварительной проверкой (pre-ping)
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_pre_ping=True,  # Автоматический пинг соединений перед их выдачей из пула
+)
+
+# Фабрика асинхронных сессий
+async_session_factory = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
+    autoflush=False,
+)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession]:
-    """FastAPI dependency that yields an async SQLAlchemy session."""
+    """Зависимость FastAPI для предоставления асинхронной сессии SQLAlchemy.
+
+    Гарантирует автоматический коммит при успешном выполнении запроса
+    или откат (rollback) изменений в случае возникновения исключения.
+
+    Yields:
+        AsyncSession: Активная сессия базы данных.
+
+    Raises:
+        Exception: Любая ошибка транзакции пробрасывается выше после rollback.
+    """
     async with async_session_factory() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

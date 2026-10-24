@@ -1,79 +1,124 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+"""Маршруты API для управления приоритетами задач."""
+
+from collections.abc import Sequence
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from project.core.database import get_session
-from project.models import Task, TaskPriority
+from project.models import TaskPriority
 from project.schemas import PriorityCreate, PriorityRead, PriorityUpdate
+from project.services.priority_service import PriorityService
 
 router = APIRouter()
 
 
-@router.get("/", response_model=list[PriorityRead])
-async def get_all_priorities(session: AsyncSession = Depends(get_session)):
-    """Get all priorities ordered by sorting weight."""
-    result = await session.execute(select(TaskPriority).order_by(TaskPriority.priority_sorting_weight))
-    return result.scalars().all()
+def get_priority_service(
+    session: AsyncSession = Depends(get_session),
+) -> PriorityService:
+    """Внедрение зависимости сервиса приоритетов.
+
+    Args:
+        session: Сессия SQLAlchemy из контекста запроса.
+
+    Returns:
+        Экземпляр PriorityService.
+    """
+    return PriorityService(session)
 
 
-@router.get("/{priority_id}", response_model=PriorityRead)
+@router.get(
+    "/",
+    response_model=list[PriorityRead],
+    status_code=status.HTTP_200_OK,
+    summary="Получить все приоритеты",
+    description="Возвращает список приоритетов, отсортированных по весу (sorting_weight).",
+    response_description="Список приоритетов",
+)
+async def get_all_priorities(
+    service: PriorityService = Depends(get_priority_service),
+) -> Sequence[TaskPriority]:
+    """Возвращает все приоритеты."""
+    return await service.list_all()
+
+
+@router.get(
+    "/{priority_id}",
+    response_model=PriorityRead,
+    status_code=status.HTTP_200_OK,
+    summary="Получить приоритет по ID",
+    description="Возвращает информацию о конкретном приоритете.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Приоритет не найден"}},
+)
 async def get_priority(
     priority_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Get a single priority by ID."""
-    priority = await session.get(TaskPriority, priority_id)
+    service: PriorityService = Depends(get_priority_service),
+) -> TaskPriority:
+    """Ищет приоритет по идентификатору."""
+    priority = await service.get_by_id(priority_id)
     if priority is None:
-        raise HTTPException(status_code=404, detail="Priority not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Приоритет с ID {priority_id} не найден",
+        )
     return priority
 
 
-@router.post("/", response_model=PriorityRead, status_code=201)
+@router.post(
+    "/",
+    response_model=PriorityRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Создать новый приоритет",
+    description="Добавляет новый приоритет с цветом и весом сортировки.",
+    response_description="Созданный приоритет",
+)
 async def create_priority(
     body: PriorityCreate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Create a new priority."""
-    priority = TaskPriority(**body.model_dump())
-    session.add(priority)
-    await session.commit()
-    await session.refresh(priority)
-    return priority
+    service: PriorityService = Depends(get_priority_service),
+) -> TaskPriority:
+    """Создает новый приоритет."""
+    return await service.create(body)
 
 
-@router.put("/{priority_id}", response_model=PriorityRead)
+@router.put(
+    "/{priority_id}",
+    response_model=PriorityRead,
+    status_code=status.HTTP_200_OK,
+    summary="Изменить приоритет",
+    description="Обновляет параметры существующего приоритета.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Приоритет не найден"}},
+)
 async def update_priority(
     priority_id: int,
     body: PriorityUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Update a priority."""
-    priority = await session.get(TaskPriority, priority_id)
+    service: PriorityService = Depends(get_priority_service),
+) -> TaskPriority:
+    """Обновляет параметры приоритета."""
+    priority = await service.get_by_id(priority_id)
     if priority is None:
-        raise HTTPException(status_code=404, detail="Priority not found")
-
-    for key, value in body.model_dump(exclude_unset=True).items():
-        setattr(priority, key, value)
-
-    await session.commit()
-    await session.refresh(priority)
-    return priority
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Приоритет с ID {priority_id} не найден",
+        )
+    return await service.update(priority, body)
 
 
-@router.delete("/{priority_id}", status_code=204)
+@router.delete(
+    "/{priority_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить приоритет",
+    description="Удаляет приоритет. У всех связанных задач поле task_priority_id сбрасывается в null.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Приоритет не найден"}},
+)
 async def delete_priority(
     priority_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete a priority. Nullifies task_priority_id on related tasks."""
-    priority = await session.get(TaskPriority, priority_id)
+    service: PriorityService = Depends(get_priority_service),
+) -> None:
+    """Удаляет приоритет."""
+    priority = await service.get_by_id(priority_id)
     if priority is None:
-        raise HTTPException(status_code=404, detail="Priority not found")
-
-    # Nullify FK on tasks that reference this priority
-    result = await session.execute(select(Task).where(Task.task_priority_id == priority_id))
-    for task in result.scalars().all():
-        task.task_priority_id = None
-
-    await session.delete(priority)
-    await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Приоритет с ID {priority_id} не найден",
+        )
+    await service.delete(priority)

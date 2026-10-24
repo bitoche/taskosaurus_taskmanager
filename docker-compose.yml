@@ -1,6 +1,10 @@
+# Docker Compose для запуска API микросервиса и PostgreSQL
 services:
+  # Сервер базы данных PostgreSQL
   db:
     image: postgres:17-alpine
+    container_name: taskmanager-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: taskmanager
       POSTGRES_PASSWORD: taskmanager
@@ -10,13 +14,23 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U taskmanager"]
+      test: ["CMD-SHELL", "pg_isready -U taskmanager -d taskmanager"]
       interval: 5s
       timeout: 3s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Бэкенд микросервис (FastAPI)
   taskservice:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskmanager-api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -25,9 +39,16 @@ services:
       APP_DB_USER: taskmanager
       APP_DB_PASSWORD: taskmanager
       APP_DB_NAME: taskmanager
+      APP_DEBUG: "false"
     depends_on:
       db:
         condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+# Именованный том для постоянного хранения данных базы
 volumes:
   pgdata:

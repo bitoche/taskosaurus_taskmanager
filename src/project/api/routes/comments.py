@@ -1,66 +1,103 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+"""Маршруты API для управления комментариями к задачам."""
+
+from collections.abc import Sequence
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from project.core.database import get_session
 from project.models import TaskComment
 from project.schemas import CommentCreate, CommentRead, CommentUpdate
+from project.services.comment_service import CommentService
 
 router = APIRouter()
 
 
-@router.get("/{task_id}/comments", response_model=list[CommentRead])
+def get_comment_service(
+    session: AsyncSession = Depends(get_session),
+) -> CommentService:
+    """Внедрение зависимости сервиса комментариев.
+
+    Args:
+        session: Сессия SQLAlchemy из контекста запроса.
+
+    Returns:
+        Экземпляр CommentService.
+    """
+    return CommentService(session)
+
+
+@router.get(
+    "/{task_id}/comments",
+    response_model=list[CommentRead],
+    status_code=status.HTTP_200_OK,
+    summary="Получить комментарии задачи",
+    description="Возвращает хронологический список комментариев для указанной задачи.",
+    response_description="Список комментариев",
+)
 async def get_task_comments(
     task_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Get all comments for a task."""
-    result = await session.execute(
-        select(TaskComment).where(TaskComment.task_id == task_id).order_by(TaskComment.created_at)
-    )
-    return result.scalars().all()
+    service: CommentService = Depends(get_comment_service),
+) -> Sequence[TaskComment]:
+    """Возвращает все комментарии к конкретной задаче."""
+    return await service.list_by_task(task_id)
 
 
-@router.post("/comment", response_model=CommentRead, status_code=201)
+@router.post(
+    "/comment",
+    response_model=CommentRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Добавить комментарий к задаче",
+    description="Создает новый комментарий и прикрепляет его к задаче.",
+    response_description="Созданный комментарий",
+)
 async def create_comment(
     body: CommentCreate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Create a comment on a task."""
-    comment = TaskComment(**body.model_dump())
-    session.add(comment)
-    await session.commit()
-    await session.refresh(comment)
-    return comment
+    service: CommentService = Depends(get_comment_service),
+) -> TaskComment:
+    """Добавляет новый комментарий к задаче."""
+    return await service.create(body)
 
 
-@router.put("/comment/{comment_id}", response_model=CommentRead)
+@router.put(
+    "/comment/{comment_id}",
+    response_model=CommentRead,
+    status_code=status.HTTP_200_OK,
+    summary="Изменить комментарий",
+    description="Обновляет текст комментария по его идентификатору.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Комментарий не найден"}},
+)
 async def update_comment(
     comment_id: int,
     body: CommentUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    """Update a comment."""
-    comment = await session.get(TaskComment, comment_id)
+    service: CommentService = Depends(get_comment_service),
+) -> TaskComment:
+    """Обновляет текст комментария."""
+    comment = await service.get_by_id(comment_id)
     if comment is None:
-        raise HTTPException(status_code=404, detail="Comment not found")
-
-    for key, value in body.model_dump(exclude_unset=True).items():
-        setattr(comment, key, value)
-
-    await session.commit()
-    await session.refresh(comment)
-    return comment
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Комментарий с ID {comment_id} не найден",
+        )
+    return await service.update(comment, body)
 
 
-@router.delete("/comment/delete/{comment_id}", status_code=204)
+@router.delete(
+    "/comment/delete/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить комментарий",
+    description="Удаляет комментарий по его идентификатору.",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Комментарий не найден"}},
+)
 async def delete_comment(
     comment_id: int,
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete a comment."""
-    comment = await session.get(TaskComment, comment_id)
+    service: CommentService = Depends(get_comment_service),
+) -> None:
+    """Удаляет комментарий."""
+    comment = await service.get_by_id(comment_id)
     if comment is None:
-        raise HTTPException(status_code=404, detail="Comment not found")
-    await session.delete(comment)
-    await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Комментарий с ID {comment_id} не найден",
+        )
+    await service.delete(comment)
