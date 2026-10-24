@@ -160,3 +160,30 @@ async def test_priority_service(session: AsyncSession) -> None:
     refreshed_task = await task_service.get_by_id(task.task_id)
     assert refreshed_task is not None
     assert refreshed_task.task_priority_id is None
+
+
+@pytest.mark.anyio
+async def test_task_service_execute_query(session: AsyncSession) -> None:
+    """Тестирование выполнения безопасных запросов и блокировки атак в TaskService."""
+    from taskmanager.core.exceptions import SqlSecurityError
+
+    service = TaskService(session)
+
+    # Создаем задачу
+    await service.create(TaskCreate(title="SQL юнит тест", description="Проверка сервиса"))
+
+    # Успешный SELECT
+    columns, rows, count = await service.execute_query("SELECT task_id, title FROM task")
+    assert columns == ["task_id", "title"]
+    assert count >= 1
+    assert any(r["title"] == "SQL юнит тест" for r in rows)
+
+    # Проверка вызова исключения при опасном запросе
+    with pytest.raises(SqlSecurityError):
+        await service.execute_query("DROP TABLE task")
+
+    with pytest.raises(SqlSecurityError):
+        await service.execute_query("SELECT * FROM task -- коммент")
+
+    with pytest.raises(SqlSecurityError):
+        await service.execute_query("SELECT 1; DROP TABLE task")

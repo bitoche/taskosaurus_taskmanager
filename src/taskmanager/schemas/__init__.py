@@ -2,12 +2,14 @@
 
 Содержит контракты для:
 - Задач (создание, обновление, чтение).
+- Пользовательских SQL-запросов (запрос, ответ).
 - Комментариев к задачам.
 - Тегов и их привязки к задачам.
 - Приоритетов задач.
 """
 
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -290,3 +292,46 @@ class PriorityRead(BaseModel):
     priority_sorting_weight: int = Field(description="Вес для сортировки")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Пользовательские SQL-запросы (SQL Queries) ────────────────────────────────
+
+
+class SqlQueryRequest(BaseModel):
+    """Схема входящего запроса на выполнение SQL-запроса к базе данных.
+
+    Attributes:
+        query: Пользовательский SQL-запрос только для чтения (SELECT или WITH ... SELECT).
+    """
+
+    query: str = Field(
+        ...,
+        description="SQL-запрос только для чтения (SELECT)",
+        examples=["SELECT task_id, title, due_date FROM task WHERE task_status = 1"],
+    )
+
+
+class SqlQueryResponse(BaseModel):
+    """Схема ответа на выполнение SQL-запроса.
+
+    Attributes:
+        columns: Список имен возвращенных колонок.
+        rows: Список строк результата в формате список словарей.
+        count: Общее количество возвращенных строк.
+    """
+
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Список имен колонок в результате",
+        examples=[["task_id", "title", "due_date"]],
+    )
+    rows: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Список строк результата в виде словарей",
+        examples=[[{"task_id": 1, "title": "Подготовить релиз", "due_date": "2026-10-31"}]],
+    )
+    count: int = Field(
+        default=0,
+        description="Количество возвращенных строк",
+        examples=[1],
+    )

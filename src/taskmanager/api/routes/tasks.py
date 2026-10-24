@@ -6,8 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from taskmanager.core.database import get_session
+from taskmanager.core.exceptions import SqlSecurityError
 from taskmanager.models import Task
-from taskmanager.schemas import TaskCreate, TaskRead, TaskUpdate
+from taskmanager.schemas import (
+    SqlQueryRequest,
+    SqlQueryResponse,
+    TaskCreate,
+    TaskRead,
+    TaskUpdate,
+)
 from taskmanager.services.task_service import TaskService
 
 router = APIRouter()
@@ -134,6 +141,44 @@ async def create_task(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ошибка валидации данных: {err}",
+        ) from err
+
+
+@router.post(
+    "/query",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Выполнить безопасный SQL-запрос к базе данных задач",
+    description=(
+        "Выполняет пользовательский SELECT SQL-запрос к базе данных задач в режиме только для чтения (READ ONLY). "
+        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
+        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
+    ),
+    response_description="Результаты запроса (колонки, строки, количество)",
+)
+@router.post(
+    "/query/",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def execute_query(
+    body: SqlQueryRequest,
+    service: TaskService = Depends(get_task_service),
+) -> SqlQueryResponse:
+    """Выполняет безопасный пользовательский SQL-запрос."""
+    try:
+        columns, rows, count = await service.execute_query(body.query)
+        return SqlQueryResponse(columns=columns, rows=rows, count=count)
+    except SqlSecurityError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err.message,
+        ) from err
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка валидации SQL-запроса: {err}",
         ) from err
 
 

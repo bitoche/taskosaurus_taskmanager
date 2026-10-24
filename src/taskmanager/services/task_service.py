@@ -1,18 +1,22 @@
 """Сервис управления задачами (бизнес-логика и доступ к данным).
 
-Содержит операции создания, поиска, фильтрации по календарю, обновления статусов
-и удаления задач.
+Содержит операции создания, поиска, фильтрации по календарю, обновления статусов,
+удаления задач и выполнения безопасных пользовательских SQL-запросов.
 """
 
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from taskmanager.core.exceptions import SqlSecurityError
 from taskmanager.models import Task
 from taskmanager.models.enums import TaskStatusEnum
 from taskmanager.schemas import TaskCreate, TaskUpdate
+from taskmanager.services.sql_guard import validate_and_clean_sql
 
 
 class TaskService:
@@ -170,3 +174,47 @@ class TaskService:
         """
         await self.session.delete(task)
         await self.session.flush()
+
+    async def execute_query(self, query: str) -> tuple[list[str], list[dict[str, Any]], int]:
+        """Выполняет безопасный пользовательский SQL-запрос только для чтения.
+
+        Запрос предварительно проверяется на отсутствие запрещенных конструкций,
+        комментариев и множественных инструкций. Выполнение происходит в контексте
+        READ ONLY на уровне транзакции / подключения.
+
+        Args:
+            query: Текст SQL-запроса от пользователя.
+
+        Returns:
+            Кортеж из списка имен колонок, списка строк-словарей и общего количества строк.
+
+        Raises:
+            SqlSecurityError: Если запрос нарушает правила безопасности или произошла ошибка выполнения SQL.
+        """
+        clean_sql = validate_and_clean_sql(query)
+
+        conn = await self.session.connection()
+        dialect_name = conn.dialect.name
+        is_sqlite = dialect_name == "sqlite"
+        is_postgres = dialect_name == "postgresql"
+
+        try:
+            if is_sqlite:
+                await self.session.execute(text("PRAGMA query_only = ON"))
+            elif is_postgres:
+                await self.session.execute(text("SET TRANSACTION READ ONLY"))
+
+            result = await self.session.execute(text(clean_sql))
+            columns = list(result.keys())
+            raw_rows = result.mappings().all()
+            rows = [dict(r) for r in raw_rows]
+            return columns, rows, len(rows)
+        except SQLAlchemyError as err:
+            orig_msg = str(getattr(err, "orig", err))
+            raise SqlSecurityError(f"Ошибка выполнения SQL-запроса: {orig_msg}") from err
+        finally:
+            if is_sqlite:
+                try:
+                    await self.session.execute(text("PRAGMA query_only = OFF"))
+                except Exception:
+                    pass

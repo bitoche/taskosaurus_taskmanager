@@ -19,7 +19,7 @@ from sqlalchemy import text
 from taskmanager.api.router import api_router
 from taskmanager.core.config import settings
 from taskmanager.core.database import async_session_factory, engine
-from taskmanager.core.exceptions import EntityNotFoundError
+from taskmanager.core.exceptions import EntityNotFoundError, SqlSecurityError
 from taskmanager.core.logging import setup_logging
 from taskmanager.models.base import Base
 
@@ -109,6 +109,14 @@ def create_app() -> FastAPI:
     async def entity_not_found_handler(request: Request, exc: EntityNotFoundError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": exc.message},
+        )
+
+    # Глобальный перехват ошибок безопасности SQL
+    @app.exception_handler(SqlSecurityError)
+    async def sql_security_error_handler(request: Request, exc: SqlSecurityError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": exc.message},
         )
 

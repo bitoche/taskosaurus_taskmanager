@@ -14,6 +14,7 @@
   * В [`src/taskmanager/__init__.py`](./src/taskmanager/__init__.py) через стандартную библиотеку:
     ```python
     import importlib.metadata
+
     __version__ = importlib.metadata.version("taskmanager")
     ```
   * В [`src/taskmanager/core/config.py`](./src/taskmanager/core/config.py) поле `app_version` автоматически берется из `__version__`.
@@ -71,7 +72,21 @@ src/taskmanager/
 ### 2.5. Ядро системы (`src/taskmanager/core/`)
 * [`config.py`](./src/taskmanager/core/config.py): Pydantic Settings с префиксом `APP_`.
 * [`database.py`](./src/taskmanager/core/database.py): `AsyncEngine`, пул соединений (`pool_pre_ping=True`) и генератор сессий `get_session` с автоматическим `commit`/`rollback`.
-* [`exceptions.py`](./src/taskmanager/core/exceptions.py): иерархия доменных исключений (`DomainError` -> `EntityNotFoundError`). В [`main.py`](./src/taskmanager/main.py) зарегистрирован глобальный обработчик, транслирующий их в 404.
+* [`exceptions.py`](./src/taskmanager/core/exceptions.py): иерархия доменных исключений (`DomainError` -> `EntityNotFoundError`, `SqlSecurityError`). В [`main.py`](./src/taskmanager/main.py) зарегистрированы глобальные обработчики для 404 (`EntityNotFoundError`) и 400 (`SqlSecurityError`).
+
+### 2.6. 🔒 Безопасный интерфейс SQL-запросов (`sql_guard.py`)
+Микросервис предоставляет эндпоинт `POST /api/tasks/query` (и алиас `POST /api/tasks/query/`) для выполнения пользовательских SQL-выборок только для чтения.
+* **Архитектурное разделение**:
+  * Маршрутизатор `src/taskmanager/api/routes/tasks.py` остается тонким и только валидирует DTO (`SqlQueryRequest` -> `SqlQueryResponse`).
+  * Модуль `src/taskmanager/services/sql_guard.py` производит лексический анализ и валидацию безопасности.
+  * Метод `TaskService.execute_query` управляет сессией, переводит СУБД в режим READ ONLY и выполняет запрос.
+* **Меры безопасности**:
+  1. **Лексический парсер с учетом строковых литералов**: проверяет код вне строк `'...'` и двойных кавычек `"..."`, поддерживая корректные фильтры вида `WHERE title = 'foo; bar'`.
+  2. **Запрет комментариев**: однострочные (`--`) и многострочные (`/* */`) комментарии категорически запрещены.
+  3. **Блокировка множественных команд**: точка с запятой `;` запрещена в теле запроса (допускается только один завершающий символ).
+  4. **Только чтение**: разрешены исключительно операторы `SELECT` и `WITH ... SELECT`.
+  5. **Черный список ключевых слов (`FORBIDDEN_KEYWORDS`)**: блокируются `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, `CREATE`, `REPLACE`, `INTO`, `ATTACH`, `DETACH`, `PRAGMA`, `EXEC`, `GRANT`, `REVOKE`, `COPY`, `VACUUM` и системные функции СУБД.
+  6. **Аппаратная защита СУБД (READ ONLY)**: транзакция переводится в режим чтения (`SET TRANSACTION READ ONLY` в PostgreSQL, `PRAGMA query_only = ON` в SQLite), что гарантирует отклонение модификаций на уровне движка данных.
 
 ---
 

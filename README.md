@@ -14,7 +14,7 @@
 * **ORM & БД**: SQLAlchemy 2.0 (asyncio) + `asyncpg` + PostgreSQL 17
 * **Миграции**: Alembic
 * **Линтер и форматтер**: Ruff
-* **Тестирование**: Pytest + AnyIO + aiosqlite (10 тестов, in-memory SQLite)
+* **Тестирование**: Pytest + AnyIO + aiosqlite (32 теста, in-memory SQLite)
 * **Контейнеризация**: Docker & Docker Compose (с непривилегированным пользователем `appuser`)
 
 ---
@@ -60,7 +60,8 @@ project/
 │   │   ├── task_service.py
 │   │   ├── comment_service.py
 │   │   ├── tag_service.py
-│   │   └── priority_service.py
+│   │   ├── priority_service.py
+│   │   └── sql_guard.py          # Валидация безопасности пользовательских SQL-запросов
 │   └── api/
 │       ├── router.py             # Корневой роутер
 │       └── routes/
@@ -139,6 +140,7 @@ uv run ruff check .
 | `POST` | `/api/tasks` | Создать задачу |
 | `PUT` | `/api/tasks/{task_id}` | Обновить задачу (автоматика закрытия/открытия) |
 | `DELETE` | `/api/tasks/{task_id}` | Удалить задачу |
+| `POST` | `/api/tasks/query` | Выполнить безопасный SQL-запрос только для чтения (алиас `/api/tasks/query/`) |
 | `GET` | `/api/tasks/{task_id}/comments` | Список комментариев задачи |
 | `POST` | `/api/tasks/comment` | Добавить комментарий к задаче |
 | `PUT` | `/api/tasks/comment/{comment_id}` | Изменить комментарий |
@@ -154,6 +156,37 @@ uv run ruff check .
 | `PUT` | `/api/priority/{priority_id}` | Обновить приоритет |
 | `DELETE` | `/api/priority/{priority_id}` | Удалить приоритет |
 | `GET` | `/api/remote_db/check_updates` | Заглушка проверки синхронизации |
+
+---
+
+## 🔒 Безопасный SQL-интерфейс (`POST /api/tasks/query`)
+
+Микросервис предоставляет защищенный эндпоинт для выполнения произвольных аналитических SQL-запросов к базе данных задач (например, для построения динамических отчетов, графиков и фильтрации):
+* **Маршруты**: `POST /api/tasks/query` и алиас `POST /api/tasks/query/`.
+* **Входные данные (`SqlQueryRequest`)**:
+  ```json
+  {
+    "query": "SELECT task_id, title, due_date FROM task WHERE task_status = 1"
+  }
+  ```
+* **Выходные данные (`SqlQueryResponse`)**:
+  ```json
+  {
+    "columns": ["task_id", "title", "due_date"],
+    "rows": [
+      {"task_id": 1, "title": "Подготовить релиз", "due_date": "2026-10-31"}
+    ],
+    "count": 1
+  }
+  ```
+
+### Многоуровневая система защиты:
+1. **Только чтение (SELECT / WITH ... SELECT)**: разрешены исключительно запросы выборки данных. CTE-выражения (`WITH`) обязаны оканчиваться оператором `SELECT`.
+2. **Блокировка опасных ключевых слов и операций**: запрещены любые модифицирующие (DML: `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `UPSERT`, `REPLACE`), структурные (DDL: `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, `RENAME`), административные (`PRAGMA`, `ATTACH`, `DETACH`, `VACUUM`, `EXEC`, `GRANT`, `COPY` и др.), а также создание таблиц через `SELECT ... INTO`.
+3. **Защита от множественных инструкций**: запрещено выполнение составных запросов через точку с запятой `;` (разрешена только одна завершающая точка с запятой).
+4. **Запрет SQL-комментариев**: однострочные (`--`) и многострочные (`/* */`) комментарии полностью блокируются для предотвращения маскирования инъекций.
+5. **READ ONLY на уровне транзакции СУБД**: перед выполнением запроса сессия переводится в режим только для чтения (`SET TRANSACTION READ ONLY` в PostgreSQL, `PRAGMA query_only = ON` в SQLite), что делает модификацию физически невозможной на уровне движка БД.
+6. **Информативные ошибки**: при нарушениях безопасности или синтаксических ошибках возвращается `HTTP 400 Bad Request` с подробным описанием причины.
 
 ---
 

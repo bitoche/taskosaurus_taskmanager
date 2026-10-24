@@ -48,3 +48,10 @@ class PriorityNotFoundError(EntityNotFoundError):
 
     def __init__(self, priority_id: int) -> None:
         super().__init__("Приоритет", priority_id)
+
+
+class SqlSecurityError(DomainError):
+    """Ошибка безопасности или валидации пользовательского SQL-запроса."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
