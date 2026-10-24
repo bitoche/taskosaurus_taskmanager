@@ -40,6 +40,30 @@ class Settings(BaseSettings):
         description="Сетевой порт для HTTP-сервера",
     )
 
+    # Параметры логирования
+    log_dir: str = Field(
+        default="logs",
+        description="Каталог для сохранения файлов логов",
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    log_file_name: str = Field(
+        default="taskmanager.log",
+        description="Имя основного файла логов",
+    )
+    log_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1024,
+        description="Максимальный размер файла логов перед ротацией в байтах (по умолчанию 10 МБ)",
+    )
+    log_backup_count: int = Field(
+        default=5,
+        ge=0,
+        description="Количество архивных файлов логов при ротации",
+    )
+
     # Параметры подключения к базе данных
     database_url: str | None = Field(
         default=None,

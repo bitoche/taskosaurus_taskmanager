@@ -59,3 +59,7 @@ _temp_taskmanager/
 *.db
 *.sqlite
 *.sqlite3
+
+# Logs
+logs/*
+!logs/.gitkeep

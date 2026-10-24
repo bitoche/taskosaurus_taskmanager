@@ -7,6 +7,7 @@
 - Управление жизненным циклом (lifespan): инициализация схемы БД и закрытие пула соединений.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -19,7 +20,10 @@ from taskmanager.api.router import api_router
 from taskmanager.core.config import settings
 from taskmanager.core.database import async_session_factory, engine
 from taskmanager.core.exceptions import EntityNotFoundError
+from taskmanager.core.logging import setup_logging
 from taskmanager.models.base import Base
+
+logger = logging.getLogger("taskmanager")
 
 
 async def _seed_initial_statuses() -> None:
@@ -58,15 +62,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     Yields:
         None во время работы приложения.
     """
+    logger.info("Запуск приложения %s v%s...", settings.app_name, settings.app_version)
     # Старт приложения
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _seed_initial_statuses()
+    logger.info("База данных инициализирована. Сервис готов к приему запросов.")
 
     yield
 
     # Завершение работы приложения
+    logger.info("Остановка приложения %s...", settings.app_name)
     await engine.dispose()
+    logger.info("Пул соединений с БД закрыт.")
 
 
 def create_app() -> FastAPI:
@@ -75,6 +83,9 @@ def create_app() -> FastAPI:
     Returns:
         Сконфигурированный объект FastAPI.
     """
+    # Инициализация логирования перед стартом приложения
+    setup_logging()
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
