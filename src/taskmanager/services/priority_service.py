@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.models import Task, TaskPriority
-from project.schemas import PriorityCreate, PriorityUpdate
+from taskmanager.models import Task, TaskPriority
+from taskmanager.schemas import PriorityCreate, PriorityUpdate
 
 
 class PriorityService:

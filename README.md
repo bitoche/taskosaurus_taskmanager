@@ -7,14 +7,31 @@
 
 ## 🚀 Стек технологий
 
+* **Версия сервиса**: `2.0.0` (Semantic Versioning)
 * **Язык**: Python 3.13+
 * **Пакетный менеджер**: [uv](https://docs.astral.sh/uv/) (быстрее Poetry в 10–100 раз)
 * **Web-фреймворк**: FastAPI + Uvicorn
 * **ORM & БД**: SQLAlchemy 2.0 (asyncio) + `asyncpg` + PostgreSQL 17
 * **Миграции**: Alembic
 * **Линтер и форматтер**: Ruff
-* **Тестирование**: Pytest + AnyIO + aiosqlite (мгновенные in-memory тесты)
-* **Контейнеризация**: Docker & Docker Compose
+* **Тестирование**: Pytest + AnyIO + aiosqlite (10 тестов, in-memory SQLite)
+* **Контейнеризация**: Docker & Docker Compose (с непривилегированным пользователем `appuser`)
+
+---
+
+## 📌 Версионирование (Single Source of Truth)
+
+В проекте реализован стандарт управления версиями:
+
+1. **Единый источник правды (Single Source of Truth)**:
+   - Версия зафиксирована в [pyproject.toml](file:///c:/Users/bitoche/Desktop/project/pyproject.toml) (`version = "2.0.0"`) и в [src/taskmanager/\_\_init\_\_.py](file:///c:/Users/bitoche/Desktop/project/src/taskmanager/__init__.py) (`__version__ = "2.0.0"`).
+2. **Динамическое считывание в рантайме**:
+   - В [src/taskmanager/core/config.py](file:///c:/Users/bitoche/Desktop/project/src/taskmanager/core/config.py) версия считывается автоматически через `importlib.metadata.version("taskmanager")`.
+   - Не требуется дублировать версию вручную по коду.
+3. **Переопределение через окружение**:
+   - При сборке в CI/CD или Docker версию можно переопределить переменной `APP_APP_VERSION`.
+4. **Git-теги**:
+   - Релизы сервиса отмечаются git-тегами (например, `v2.0.0`). В CI/CD пайплайне создание тега автоматически триггерит сборку Docker-образа с соответствующим тегом.
 
 ---
 
@@ -24,17 +41,26 @@
 project/
 ├── alembic/                      # Миграции базы данных
 │   ├── versions/
+│   │   └── 0001_initial_schema.py
 │   └── env.py
-├── src/project/
+├── src/taskmanager/
+│   ├── __init__.py               # __version__ = "2.0.0"
 │   ├── main.py                   # Точка входа, lifespan, CORS, автосоздание таблиц
 │   ├── core/
 │   │   ├── config.py             # Настройки из env (Pydantic Settings)
-│   │   └── database.py           # Async engine и фабрика сессий get_session
+│   │   ├── database.py           # Async engine и фабрика сессий get_session
+│   │   └── exceptions.py         # Кастомные доменные исключения (DomainError)
 │   ├── models/                   # Модели SQLAlchemy
-│   │   ├── base.py
+│   │   ├── base.py               # Naming conventions
+│   │   ├── enums.py              # TaskStatusEnum
 │   │   └── __init__.py           # Task, TaskComment, TaskTag, TaskPriority, TaskStatus
-│   ├── schemas/                  # Pydantic-схемы запросов и ответов
+│   ├── schemas/                  # Pydantic DTO с валидацией
 │   │   └── __init__.py
+│   ├── services/                 # Сервисный слой (бизнес-логика)
+│   │   ├── task_service.py
+│   │   ├── comment_service.py
+│   │   ├── tag_service.py
+│   │   └── priority_service.py
 │   └── api/
 │       ├── router.py             # Корневой роутер
 │       └── routes/
@@ -46,9 +72,10 @@ project/
 │           └── remote_db.py      # Заглушки синхронизации для совместимости с webui
 ├── tests/
 │   ├── conftest.py               # Async фикстуры с in-memory SQLite
-│   └── test_api.py               # E2E тесты всех эндпоинтов
+│   ├── test_api.py               # E2E тесты эндпоинтов
+│   └── test_services.py          # Юнит-тесты сервисного слоя
 ├── docker-compose.yml            # Сервис + PostgreSQL 17
-├── Dockerfile                    # Multi-stage сборка на базе uv
+├── Dockerfile                    # Multi-stage сборка на базе uv (от пользователя appuser)
 ├── pyproject.toml                # Зависимости и конфигурация инструментов
 └── uv.lock                       # Детерминированный lock-файл
 ```
@@ -58,8 +85,6 @@ project/
 ## 🛠️ Быстрый старт
 
 ### Вариант 1: Запуск всего через Docker Compose
-
-Поднимает PostgreSQL 17 и API-сервис:
 
 ```bash
 docker compose up --build
@@ -84,14 +109,12 @@ API будет доступен по адресу: `http://localhost:8000`
 
 3. **Запустите сервер в режиме разработки**:
    ```bash
-   uv run uvicorn project.main:app --reload --port 8000
+   uv run uvicorn taskmanager.main:app --reload --port 8000
    ```
 
 ---
 
 ## 🧪 Запуск тестов
-
-Тесты используют `aiosqlite` в памяти и не требуют запущенного PostgreSQL:
 
 ```bash
 uv run pytest -v
@@ -138,6 +161,7 @@ uv run ruff check .
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
+| `APP_APP_VERSION` | `2.0.0` | Версия приложения |
 | `APP_DB_HOST` | `localhost` | Хост PostgreSQL |
 | `APP_DB_PORT` | `5432` | Порт PostgreSQL |
 | `APP_DB_USER` | `taskmanager` | Пользователь БД |

@@ -16,9 +16,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from project.core.database import get_session
-from project.main import app
-from project.models.base import Base
+from taskmanager.core.database import get_session
+from taskmanager.main import app
+from taskmanager.models.base import Base
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

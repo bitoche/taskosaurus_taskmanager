@@ -15,11 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from project.api.router import api_router
-from project.core.config import settings
-from project.core.database import async_session_factory, engine
-from project.core.exceptions import EntityNotFoundError
-from project.models.base import Base
+from taskmanager.api.router import api_router
+from taskmanager.core.config import settings
+from taskmanager.core.database import async_session_factory, engine
+from taskmanager.core.exceptions import EntityNotFoundError
+from taskmanager.models.base import Base
 
 
 async def _seed_initial_statuses() -> None:

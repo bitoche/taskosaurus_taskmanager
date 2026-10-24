@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter
 
-from project.api.routes import (
+from taskmanager.api.routes import (
     comments,
     health,
     priorities,

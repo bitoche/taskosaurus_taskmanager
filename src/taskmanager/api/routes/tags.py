@@ -5,10 +5,10 @@ from collections.abc import Sequence
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.core.database import get_session
-from project.models import TaskTag, TaskTagXTask
-from project.schemas import TagAssign, TagCreate, TagRead, TagUpdate, TagWithTasks
-from project.services.tag_service import TagService
+from taskmanager.core.database import get_session
+from taskmanager.models import TaskTag, TaskTagXTask
+from taskmanager.schemas import TagAssign, TagCreate, TagRead, TagUpdate, TagWithTasks
+from taskmanager.services.tag_service import TagService
 
 router = APIRouter()
 

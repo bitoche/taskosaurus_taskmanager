@@ -10,9 +10,9 @@ from datetime import UTC, date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.models import Task
-from project.models.enums import TaskStatusEnum
-from project.schemas import TaskCreate, TaskUpdate
+from taskmanager.models import Task
+from taskmanager.models.enums import TaskStatusEnum
+from taskmanager.schemas import TaskCreate, TaskUpdate
 
 
 class TaskService:

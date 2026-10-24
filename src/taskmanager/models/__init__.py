@@ -14,8 +14,8 @@ from datetime import UTC, date, datetime
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from project.models.base import Base
-from project.models.enums import TaskStatusEnum
+from taskmanager.models.base import Base
+from taskmanager.models.enums import TaskStatusEnum
 
 
 def _utc_now() -> datetime:

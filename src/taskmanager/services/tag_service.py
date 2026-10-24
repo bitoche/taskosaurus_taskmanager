@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.models import TaskTag, TaskTagXTask
-from project.schemas import TagAssign, TagCreate, TagUpdate
+from taskmanager.models import TaskTag, TaskTagXTask
+from taskmanager.schemas import TagAssign, TagCreate, TagUpdate
 
 
 class TagService:

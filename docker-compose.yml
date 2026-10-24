@@ -34,6 +34,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      APP_APP_VERSION: "2.0.0"
       APP_DB_HOST: db
       APP_DB_PORT: 5432
       APP_DB_USER: taskmanager

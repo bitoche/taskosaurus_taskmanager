@@ -1,7 +1,7 @@
 [project]
-name = "project"
-version = "0.1.0"
-description = "Add your description here"
+name = "taskmanager"
+version = "2.0.0"
+description = "Асинхронный микросервис календаря и управления задачами (FastAPI + PostgreSQL)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-project = "project:main"
+taskmanager = "taskmanager.main:app"
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]

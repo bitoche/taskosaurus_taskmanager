@@ -7,10 +7,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import project.models  # noqa: F401 - регистрация всех моделей в Base.metadata
+import taskmanager.models  # noqa: F401 - регистрация всех моделей в Base.metadata
 from alembic import context
-from project.core.config import settings
-from project.models.base import Base
+from taskmanager.core.config import settings
+from taskmanager.models.base import Base
 
 # Объект конфигурации Alembic из файла alembic.ini
 config = context.config

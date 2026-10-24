@@ -5,8 +5,8 @@ from datetime import date
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.models.enums import TaskStatusEnum
-from project.schemas import (
+from taskmanager.models.enums import TaskStatusEnum
+from taskmanager.schemas import (
     CommentCreate,
     CommentUpdate,
     PriorityCreate,
@@ -17,7 +17,7 @@ from project.schemas import (
     TaskCreate,
     TaskUpdate,
 )
-from project.services import (
+from taskmanager.services import (
     CommentService,
     PriorityService,
     TagService,

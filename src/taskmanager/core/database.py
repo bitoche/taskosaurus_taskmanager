@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from project.core.config import settings
+from taskmanager.core.config import settings
 
 # Асинхронный движок с пулом соединений и предварительной проверкой (pre-ping)
 engine = create_async_engine(

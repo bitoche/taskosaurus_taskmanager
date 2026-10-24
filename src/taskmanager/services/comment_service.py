@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.models import TaskComment
-from project.schemas import CommentCreate, CommentUpdate
+from taskmanager.models import TaskComment
+from taskmanager.schemas import CommentCreate, CommentUpdate
 
 
 class CommentService:

@@ -5,10 +5,10 @@ from collections.abc import Sequence
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project.core.database import get_session
-from project.models import TaskComment
-from project.schemas import CommentCreate, CommentRead, CommentUpdate
-from project.services.comment_service import CommentService
+from taskmanager.core.database import get_session
+from taskmanager.models import TaskComment
+from taskmanager.schemas import CommentCreate, CommentRead, CommentUpdate
+from taskmanager.services.comment_service import CommentService
 
 router = APIRouter()
 
