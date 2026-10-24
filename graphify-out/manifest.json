@@ -1,0 +1,218 @@
+{
+  "alembic/env.py": {
+    "mtime": 1792866276.2087548,
+    "seen": 1792870183.7579231,
+    "ast_hash": "ab76c9f62221103e28d8b8bd446850fb",
+    "semantic_hash": "ab76c9f62221103e28d8b8bd446850fb"
+  },
+  "alembic/versions/0001_initial_schema.py": {
+    "mtime": 1792865284.9483204,
+    "seen": 1792870183.7579231,
+    "ast_hash": "c0cc9599d3fb6ec242d1db5c07c357d7",
+    "semantic_hash": "c0cc9599d3fb6ec242d1db5c07c357d7"
+  },
+  "docker-compose.yml": {
+    "mtime": 1792865793.0826747,
+    "seen": 1792870183.7579231,
+    "ast_hash": "07ea5be86654bbbd25342fa35d158084",
+    "semantic_hash": "07ea5be86654bbbd25342fa35d158084"
+  },
+  "pyproject.toml": {
+    "mtime": 1792865584.9950578,
+    "seen": 1792870183.7579231,
+    "ast_hash": "6961d77261ae85930e0ea8150c1f28eb",
+    "semantic_hash": "6961d77261ae85930e0ea8150c1f28eb"
+  },
+  "src/taskmanager/__init__.py": {
+    "mtime": 1792865776.772143,
+    "seen": 1792870183.7579231,
+    "ast_hash": "852fea84d680c86ebfb0054672e9a287",
+    "semantic_hash": "852fea84d680c86ebfb0054672e9a287"
+  },
+  "src/taskmanager/api/__init__.py": {
+    "mtime": 1792865600.7453854,
+    "seen": 1792870183.7579231,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/taskmanager/api/router.py": {
+    "mtime": 1792865600.7469952,
+    "seen": 1792870183.7579231,
+    "ast_hash": "f7701d0b68e25e5d5242739dc3989582",
+    "semantic_hash": "f7701d0b68e25e5d5242739dc3989582"
+  },
+  "src/taskmanager/api/routes/__init__.py": {
+    "mtime": 1792865600.7469952,
+    "seen": 1792870183.7579231,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/taskmanager/api/routes/comments.py": {
+    "mtime": 1792865600.7480023,
+    "seen": 1792870183.7579231,
+    "ast_hash": "5d807be54366b7705fda53098889bd37",
+    "semantic_hash": "5d807be54366b7705fda53098889bd37"
+  },
+  "src/taskmanager/api/routes/health.py": {
+    "mtime": 1792863553.0542057,
+    "seen": 1792870183.7579231,
+    "ast_hash": "b9724313397b8008f30a1d9e39b552a5",
+    "semantic_hash": "b9724313397b8008f30a1d9e39b552a5"
+  },
+  "src/taskmanager/api/routes/priorities.py": {
+    "mtime": 1792866542.2199285,
+    "seen": 1792870183.7579231,
+    "ast_hash": "2d757ca580c55e0b8cfee9c9fc15d801",
+    "semantic_hash": "2d757ca580c55e0b8cfee9c9fc15d801"
+  },
+  "src/taskmanager/api/routes/remote_db.py": {
+    "mtime": 1792863601.619567,
+    "seen": 1792870183.7579231,
+    "ast_hash": "34c94eb6f4925ed67e1d1f660d9156ca",
+    "semantic_hash": "34c94eb6f4925ed67e1d1f660d9156ca"
+  },
+  "src/taskmanager/api/routes/tags.py": {
+    "mtime": 1792866522.1822972,
+    "seen": 1792870183.7579231,
+    "ast_hash": "a5b377e35809a8035e52ecdc88d580f5",
+    "semantic_hash": "a5b377e35809a8035e52ecdc88d580f5"
+  },
+  "src/taskmanager/api/routes/tasks.py": {
+    "mtime": 1792866508.8187,
+    "seen": 1792870183.7579231,
+    "ast_hash": "96c65f31267f0c162bf6a61e8cd6a6c9",
+    "semantic_hash": "96c65f31267f0c162bf6a61e8cd6a6c9"
+  },
+  "src/taskmanager/core/__init__.py": {
+    "mtime": 1792865600.7469952,
+    "seen": 1792870183.7579231,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "src/taskmanager/core/config.py": {
+    "mtime": 1792866819.872469,
+    "seen": 1792870183.7579231,
+    "ast_hash": "9dac292e193d43d055fa3e619329651e",
+    "semantic_hash": "9dac292e193d43d055fa3e619329651e"
+  },
+  "src/taskmanager/core/database.py": {
+    "mtime": 1792866271.4406385,
+    "seen": 1792870183.7579231,
+    "ast_hash": "3eb24c2e54fe6be2ffba3ea73996c1af",
+    "semantic_hash": "3eb24c2e54fe6be2ffba3ea73996c1af"
+  },
+  "src/taskmanager/core/exceptions.py": {
+    "mtime": 1792865163.1153066,
+    "seen": 1792870183.7579231,
+    "ast_hash": "fc2506d6f625504dc46693c09933c478",
+    "semantic_hash": "fc2506d6f625504dc46693c09933c478"
+  },
+  "src/taskmanager/core/logging.py": {
+    "mtime": 1792866850.0511992,
+    "seen": 1792870183.7579231,
+    "ast_hash": "2bb861f9a13d51b1be88de016fb18b55",
+    "semantic_hash": "2bb861f9a13d51b1be88de016fb18b55"
+  },
+  "src/taskmanager/main.py": {
+    "mtime": 1792866878.9573152,
+    "seen": 1792870183.7579231,
+    "ast_hash": "5abc19bb7e68a0758e3bafc98c1d0d8c",
+    "semantic_hash": "5abc19bb7e68a0758e3bafc98c1d0d8c"
+  },
+  "src/taskmanager/models/__init__.py": {
+    "mtime": 1792865600.7486193,
+    "seen": 1792870183.7579231,
+    "ast_hash": "65191c75b7acfaf94ab3d5760cb65014",
+    "semantic_hash": "65191c75b7acfaf94ab3d5760cb65014"
+  },
+  "src/taskmanager/models/base.py": {
+    "mtime": 1792863445.125161,
+    "seen": 1792870183.7579231,
+    "ast_hash": "af38f7561050516da93722286f6beb7b",
+    "semantic_hash": "af38f7561050516da93722286f6beb7b"
+  },
+  "src/taskmanager/models/enums.py": {
+    "mtime": 1792863448.9611077,
+    "seen": 1792870183.7579231,
+    "ast_hash": "d737ad824e8c6c8502609e0aa1a770ba",
+    "semantic_hash": "d737ad824e8c6c8502609e0aa1a770ba"
+  },
+  "src/taskmanager/schemas/__init__.py": {
+    "mtime": 1792863677.925431,
+    "seen": 1792870183.7579231,
+    "ast_hash": "ac6008ef0afdf8a7ce8eaafc7ca26242",
+    "semantic_hash": "ac6008ef0afdf8a7ce8eaafc7ca26242"
+  },
+  "src/taskmanager/services/__init__.py": {
+    "mtime": 1792865600.7469952,
+    "seen": 1792870183.7579231,
+    "ast_hash": "5930b4790fc0ca8a3ee17fde551d7b23",
+    "semantic_hash": "5930b4790fc0ca8a3ee17fde551d7b23"
+  },
+  "src/taskmanager/services/comment_service.py": {
+    "mtime": 1792865600.7480023,
+    "seen": 1792870183.7579231,
+    "ast_hash": "1521b5e7c84b574ed3fbc976ec48881e",
+    "semantic_hash": "1521b5e7c84b574ed3fbc976ec48881e"
+  },
+  "src/taskmanager/services/priority_service.py": {
+    "mtime": 1792865600.7491248,
+    "seen": 1792870183.7579231,
+    "ast_hash": "562d964453dff2a95ceaea535b73b7d3",
+    "semantic_hash": "562d964453dff2a95ceaea535b73b7d3"
+  },
+  "src/taskmanager/services/tag_service.py": {
+    "mtime": 1792865600.7486193,
+    "seen": 1792870183.7579231,
+    "ast_hash": "773c3ca915c886f1162cfaf98278c0af",
+    "semantic_hash": "773c3ca915c886f1162cfaf98278c0af"
+  },
+  "src/taskmanager/services/task_service.py": {
+    "mtime": 1792865600.7491248,
+    "seen": 1792870183.7579231,
+    "ast_hash": "7532466001f4b032363c24295ff20b25",
+    "semantic_hash": "7532466001f4b032363c24295ff20b25"
+  },
+  "tests/__init__.py": {
+    "mtime": 1792865600.7480023,
+    "seen": 1792870183.7579231,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/conftest.py": {
+    "mtime": 1792865600.7486193,
+    "seen": 1792870183.7579231,
+    "ast_hash": "620a416168701c45d23f4e03b22dba44",
+    "semantic_hash": "620a416168701c45d23f4e03b22dba44"
+  },
+  "tests/test_api.py": {
+    "mtime": 1792863677.925431,
+    "seen": 1792870183.7579231,
+    "ast_hash": "58c760646f6ab4ab5840d0cdbfa0a78c",
+    "semantic_hash": "58c760646f6ab4ab5840d0cdbfa0a78c"
+  },
+  "tests/test_services.py": {
+    "mtime": 1792865600.7491248,
+    "seen": 1792870183.7579231,
+    "ast_hash": "3ea4dd0e366ba18115b3555e37891a15",
+    "semantic_hash": "3ea4dd0e366ba18115b3555e37891a15"
+  },
+  "AGENTS.md": {
+    "mtime": 1792865970.1089616,
+    "seen": 1792870183.7579231,
+    "ast_hash": "30bd80bc013fab5bbb42a108195d84a8",
+    "semantic_hash": "30bd80bc013fab5bbb42a108195d84a8"
+  },
+  "ARCHITECTURE.md": {
+    "mtime": 1792867160.1775453,
+    "seen": 1792870183.7579231,
+    "ast_hash": "c762983d9cbcb1e3a68386d45c65bf15",
+    "semantic_hash": "c762983d9cbcb1e3a68386d45c65bf15"
+  },
+  "README.md": {
+    "mtime": 1792865975.7391331,
+    "seen": 1792870183.7579231,
+    "ast_hash": "428ab1684b080fdd28d33f1e3956f199",
+    "semantic_hash": "428ab1684b080fdd28d33f1e3956f199"
+  }
+}
