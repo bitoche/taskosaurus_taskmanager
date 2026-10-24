@@ -19,8 +19,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Динамическая подстановка URL базы данных из настроек приложения
-config.set_main_option("sqlalchemy.url", settings.effective_database_url)
+# Динамическая подстановка URL базы данных из настроек приложения (экранируем % для configparser)
+config.set_main_option("sqlalchemy.url", settings.effective_database_url.replace("%", "%%"))
 
 # Метаданные моделей для поддержки автогенерации миграций (--autogenerate)
 target_metadata = Base.metadata

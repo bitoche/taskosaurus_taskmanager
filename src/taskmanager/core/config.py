@@ -113,7 +113,11 @@ class Settings(BaseSettings):
         """
         if self.database_url:
             return self.database_url
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        from urllib.parse import quote_plus
+
+        safe_password = quote_plus(self.db_password)
+        safe_user = quote_plus(self.db_user)
+        return f"postgresql+asyncpg://{safe_user}:{safe_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     model_config = SettingsConfigDict(
         env_prefix="APP_",
