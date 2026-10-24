@@ -19,19 +19,17 @@
 
 ---
 
-## 📌 Версионирование (Single Source of Truth)
+## 📌 Версионирование (Единственный источник правды)
 
-В проекте реализован стандарт управления версиями:
+Версия проекта задается **строго в одном месте**:
+- [pyproject.toml](file:///c:/Users/bitoche/Desktop/project/pyproject.toml) (`version = "2.0.0"`).
 
-1. **Единый источник правды (Single Source of Truth)**:
-   - Версия зафиксирована в [pyproject.toml](file:///c:/Users/bitoche/Desktop/project/pyproject.toml) (`version = "2.0.0"`) и в [src/taskmanager/\_\_init\_\_.py](file:///c:/Users/bitoche/Desktop/project/src/taskmanager/__init__.py) (`__version__ = "2.0.0"`).
-2. **Динамическое считывание в рантайме**:
-   - В [src/taskmanager/core/config.py](file:///c:/Users/bitoche/Desktop/project/src/taskmanager/core/config.py) версия считывается автоматически через `importlib.metadata.version("taskmanager")`.
-   - Не требуется дублировать версию вручную по коду.
-3. **Переопределение через окружение**:
-   - При сборке в CI/CD или Docker версию можно переопределить переменной `APP_APP_VERSION`.
-4. **Git-теги**:
-   - Релизы сервиса отмечаются git-тегами (например, `v2.0.0`). В CI/CD пайплайне создание тега автоматически триггерит сборку Docker-образа с соответствующим тегом.
+Во всех остальных местах (в коде FastAPI, Swagger-документации, `taskmanager.__version__`) версия подтягивается автоматически через стандартную библиотеку `importlib.metadata`. В `.env` или коде вручную менять ничего не нужно.
+
+Чтобы поднять версию:
+1. Меняем `version = "X.Y.Z"` в `pyproject.toml`.
+2. Выполняем `uv sync`.
+3. Всё приложение уже работает на новой версии!
 
 ---
 
@@ -161,7 +159,6 @@ uv run ruff check .
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `APP_APP_VERSION` | `2.0.0` | Версия приложения |
 | `APP_DB_HOST` | `localhost` | Хост PostgreSQL |
 | `APP_DB_PORT` | `5432` | Порт PostgreSQL |
 | `APP_DB_USER` | `taskmanager` | Пользователь БД |

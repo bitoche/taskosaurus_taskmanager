@@ -4,20 +4,10 @@
 и .env-файлов с автоматической валидацией типов.
 """
 
-import importlib.metadata
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from taskmanager import __version__
-
-
-def _get_default_version() -> str:
-    """Получает текущую версию приложения из метаданных пакета или константы __version__."""
-    try:
-        return importlib.metadata.version("taskmanager")
-    except importlib.metadata.PackageNotFoundError:
-        return __version__
 
 
 class Settings(BaseSettings):
@@ -32,8 +22,8 @@ class Settings(BaseSettings):
         description="Название приложения для OpenAPI и логов",
     )
     app_version: str = Field(
-        default_factory=_get_default_version,
-        description="Версия микросервиса (из pyproject.toml или переменной APP_APP_VERSION)",
+        default=__version__,
+        description="Версия микросервиса (считывается из pyproject.toml)",
     )
     debug: bool = Field(
         default=False,
