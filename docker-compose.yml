@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: taskmanager
+      POSTGRES_PASSWORD: taskmanager
+      POSTGRES_DB: taskmanager
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskmanager"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  taskservice:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_DB_HOST: db
+      APP_DB_PORT: 5432
+      APP_DB_USER: taskmanager
+      APP_DB_PASSWORD: taskmanager
+      APP_DB_NAME: taskmanager
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

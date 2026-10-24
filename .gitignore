@@ -50,3 +50,6 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# Temp
+_temp_taskmanager/
