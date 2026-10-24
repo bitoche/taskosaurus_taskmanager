@@ -28,6 +28,12 @@ def get_priority_service(
 
 
 @router.get(
+    "",
+    response_model=list[PriorityRead],
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@router.get(
     "/",
     response_model=list[PriorityRead],
     status_code=status.HTTP_200_OK,
@@ -64,6 +70,12 @@ async def get_priority(
     return priority
 
 
+@router.post(
+    "",
+    response_model=PriorityRead,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 @router.post(
     "/",
     response_model=PriorityRead,

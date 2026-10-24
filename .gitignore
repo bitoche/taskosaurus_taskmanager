@@ -53,3 +53,9 @@ htmlcov/
 
 # Temp
 _temp_taskmanager/
+
+# Local Environment and Database
+.env
+*.db
+*.sqlite
+*.sqlite3

@@ -26,6 +26,12 @@ def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskServic
 
 
 @router.get(
+    "",
+    response_model=list[TaskRead],
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@router.get(
     "/",
     response_model=list[TaskRead],
     status_code=status.HTTP_200_OK,
@@ -103,6 +109,12 @@ async def get_task(
     return task
 
 
+@router.post(
+    "",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 @router.post(
     "/",
     response_model=TaskRead,

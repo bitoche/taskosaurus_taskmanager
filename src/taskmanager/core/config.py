@@ -40,7 +40,11 @@ class Settings(BaseSettings):
         description="Сетевой порт для HTTP-сервера",
     )
 
-    # Параметры подключения к PostgreSQL
+    # Параметры подключения к базе данных
+    database_url: str | None = Field(
+        default=None,
+        description="Полная строка подключения к БД (если не задана, формируется из параметров db_*)",
+    )
     db_host: str = Field(
         default="localhost",
         description="Хост сервера PostgreSQL",
@@ -77,12 +81,14 @@ class Settings(BaseSettings):
     )
 
     @property
-    def database_url(self) -> str:
-        """Формирует строку подключения к PostgreSQL для асинхронного драйвера asyncpg.
+    def effective_database_url(self) -> str:
+        """Возвращает строку подключения к базе данных.
 
-        Returns:
-            Строка подключения вида: postgresql+asyncpg://user:pass@host:port/dbname
+        Если задана явная `database_url` (или переменная APP_DATABASE_URL), используется она.
+        Иначе формируется URL к PostgreSQL по умолчанию.
         """
+        if self.database_url:
+            return self.database_url
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     model_config = SettingsConfigDict(

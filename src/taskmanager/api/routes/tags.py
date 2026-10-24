@@ -26,6 +26,12 @@ def get_tag_service(session: AsyncSession = Depends(get_session)) -> TagService:
 
 
 @router.get(
+    "",
+    response_model=list[TagRead],
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+@router.get(
     "/",
     response_model=list[TagRead],
     status_code=status.HTTP_200_OK,
@@ -55,6 +61,12 @@ async def get_all_tags_with_tasks(
     return await service.list_assignments()
 
 
+@router.post(
+    "",
+    response_model=TagRead,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 @router.post(
     "/",
     response_model=TagRead,
