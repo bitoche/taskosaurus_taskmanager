@@ -47,3 +47,6 @@ venv.bak/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Ruff
+.ruff_cache/
