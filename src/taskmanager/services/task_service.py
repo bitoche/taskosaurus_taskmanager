@@ -124,6 +124,9 @@ class TaskService:
             Созданная сущность Task с присвоенным ID.
         """
         data = dto.model_dump(exclude_unset=True)
+        if "closed_dttm" in data and isinstance(data["closed_dttm"], datetime):
+            if data["closed_dttm"].tzinfo is not None:
+                data["closed_dttm"] = data["closed_dttm"].astimezone(UTC).replace(tzinfo=None)
         task = Task(**data, user_id=user_id)
         self.session.add(task)
         await self.session.flush()

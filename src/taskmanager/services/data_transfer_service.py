@@ -22,6 +22,15 @@ def _utc_now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Преобразует offset-aware datetime в naive UTC datetime для PostgreSQL."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
 class DataTransferService:
     """Сервис для резервного копирования и восстановления данных пользователя."""
 
@@ -139,14 +148,15 @@ class DataTransferService:
         # 3. Задачи, комментарии и теги
         for task_dto in data.tasks:
             p_id = priority_map.get(task_dto.priority_name) if task_dto.priority_name else None
+            closed_dt = _to_naive_utc(task_dto.closed_dttm)
             new_task = Task(
                 user_id=user_id,
                 title=task_dto.title,
                 description=task_dto.description,
                 link_to_taskmanager=task_dto.link_to_taskmanager,
                 due_date=task_dto.due_date,
-                closed_dttm=task_dto.closed_dttm,
-                task_status=task_dto.task_status or 1,
+                closed_dttm=closed_dt,
+                task_status=task_dto.task_status or (2 if closed_dt else 1),
                 task_priority_id=p_id,
             )
             self.session.add(new_task)
@@ -164,7 +174,7 @@ class DataTransferService:
                 comment = TaskComment(
                     task_id=new_task.task_id,
                     text=c_dto.text,
-                    created_at=c_dto.created_at or _utc_now(),
+                    created_at=_to_naive_utc(c_dto.created_at) or _utc_now(),
                 )
                 self.session.add(comment)
                 summary.comments_imported += 1

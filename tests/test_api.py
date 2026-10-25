@@ -399,3 +399,25 @@ async def test_export_and_import_data(
     assert u2_res.status_code == 200
     u2_tasks = u2_res.json()
     assert any(t["title"] == "Релиз v3.1" for t in u2_tasks)
+
+    # 6. Проверяем импорт задачи с ISO-таймзоной (Z / +03:00) в closed_dttm и created_at
+    tz_payload = {
+        "version": "1.0",
+        "username": test_user.username,
+        "priorities": [],
+        "tags": [],
+        "tasks": [
+            {
+                "title": "Задача с таймзоной",
+                "closed_dttm": "2026-10-25T18:00:00Z",
+                "task_status": 2,
+                "comments": [
+                    {"text": "Коммент с таймзоной", "created_at": "2026-10-25T18:30:00+03:00"}
+                ],
+            }
+        ],
+    }
+    tz_res = await auth_client.post("/api/users/me/import", json=tz_payload)
+    assert tz_res.status_code == 200
+    assert tz_res.json()["tasks_imported"] == 1
+    assert tz_res.json()["comments_imported"] == 1
