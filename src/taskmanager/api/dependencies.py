@@ -9,6 +9,7 @@ from taskmanager.core.security import decode_access_token
 from taskmanager.models import User
 from taskmanager.services.auth_service import AuthService
 from taskmanager.services.comment_service import CommentService
+from taskmanager.services.data_transfer_service import DataTransferService
 from taskmanager.services.priority_service import PriorityService
 from taskmanager.services.tag_service import TagService
 from taskmanager.services.task_service import TaskService
@@ -17,6 +18,11 @@ from taskmanager.services.task_service import TaskService
 def get_auth_service(session: AsyncSession = Depends(get_session)) -> AuthService:
     """Провайдер сервиса аутентификации."""
     return AuthService(session)
+
+
+def get_data_transfer_service(session: AsyncSession = Depends(get_session)) -> DataTransferService:
+    """Провайдер сервиса импорта/экспорта данных."""
+    return DataTransferService(session)
 
 
 def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskService:
@@ -90,6 +96,14 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Пользователь заблокирован или не найден",
+        )
+
+    token_ver = payload.get("ver", 1)
+    if token_ver < user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия была отозвана. Пожалуйста, выполните вход снова.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return user

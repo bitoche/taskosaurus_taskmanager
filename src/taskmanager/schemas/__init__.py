@@ -400,3 +400,65 @@ class RegisterWithInvite(BaseModel):
     token: str = Field(..., min_length=10, max_length=64, description="Инвайт-токен")
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_\-\.]+$", description="Логин")
     password: str = Field(..., min_length=8, max_length=128, description="Надежный пароль")
+
+
+class UserAdminRead(BaseModel):
+    """Схема пользователя с расширенной статистикой для администратора."""
+
+    user_id: int = Field(description="ID пользователя")
+    username: str = Field(description="Логин")
+    email: str | None = Field(default=None, description="Email")
+    role: str = Field(description="Роль (admin или user)")
+    is_active: bool = Field(description="Активен ли")
+    token_version: int = Field(description="Текущая версия сессии")
+    created_at: datetime = Field(description="Дата создания")
+    tasks_count: int = Field(default=0, description="Количество задач")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Экспорт и Импорт данных (Export & Import) ────────────────────────────────
+
+
+class ExportPriority(BaseModel):
+    priority_name: str
+    priority_color: str
+    priority_sorting_weight: int = 0
+
+
+class ExportTag(BaseModel):
+    tag_text: str
+    tag_color: str
+
+
+class ExportComment(BaseModel):
+    text: str
+    created_at: datetime | None = None
+
+
+class ExportTask(BaseModel):
+    title: str
+    description: str | None = None
+    link_to_taskmanager: str | None = None
+    due_date: date | None = None
+    closed_dttm: datetime | None = None
+    task_status: int | None = 1
+    priority_name: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    comments: list[ExportComment] = Field(default_factory=list)
+
+
+class UserDataExport(BaseModel):
+    version: str = "1.0"
+    exported_at: datetime = Field(default_factory=datetime.utcnow)
+    username: str
+    priorities: list[ExportPriority] = Field(default_factory=list)
+    tags: list[ExportTag] = Field(default_factory=list)
+    tasks: list[ExportTask] = Field(default_factory=list)
+
+
+class ImportSummary(BaseModel):
+    tasks_imported: int = 0
+    priorities_imported: int = 0
+    tags_imported: int = 0
+    comments_imported: int = 0

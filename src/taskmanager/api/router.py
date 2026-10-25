@@ -13,6 +13,7 @@ from taskmanager.api.routes import (
     priorities,
     tags,
     tasks,
+    users,
 )
 from taskmanager.api.routes.tasks import execute_query, execute_query_get
 from taskmanager.models import User
@@ -23,6 +24,7 @@ api_router = APIRouter()
 
 # Регистрация маршрутов с соответствующими префиксами и тегами OpenAPI
 api_router.include_router(auth.router, prefix="/auth", tags=["Аутентификация"])
+api_router.include_router(users.router, prefix="/users", tags=["Пользователи"])
 api_router.include_router(health.router, tags=["Служебные"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["Задачи"])
 api_router.include_router(comments.router, prefix="/tasks", tags=["Комментарии"])

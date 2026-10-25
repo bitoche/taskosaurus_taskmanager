@@ -65,7 +65,7 @@ async def login(
             detail=err.message,
         ) from err
 
-    token = create_access_token({"sub": str(user.user_id), "role": user.role})
+    token = create_access_token({"sub": str(user.user_id), "role": user.role, "ver": user.token_version})
     max_age = settings.access_token_expire_minutes * 60
 
     response.set_cookie(
@@ -163,7 +163,7 @@ async def register_with_invite(
         ) from err
 
     # Автоматически устанавливаем сессионную cookie новому пользователю
-    token = create_access_token({"sub": str(user.user_id), "role": user.role})
+    token = create_access_token({"sub": str(user.user_id), "role": user.role, "ver": user.token_version})
     max_age = settings.access_token_expire_minutes * 60
 
     response.set_cookie(

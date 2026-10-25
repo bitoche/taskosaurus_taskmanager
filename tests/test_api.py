@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 
 from taskmanager.core.config import settings
+from taskmanager.core.security import create_access_token
 from taskmanager.models import User
 
 
@@ -236,3 +237,137 @@ async def test_sql_query_scoping_via_api(
     admin_res = await admin_client.post("/api/query", json={"query": "SELECT task_id, title FROM task"})
     assert admin_res.status_code == 200
     assert admin_res.json()["is_isolated"] is False
+
+
+@pytest.mark.anyio
+async def test_admin_user_management(
+    auth_client: AsyncClient,
+    admin_client: AsyncClient,
+    second_user: User,
+) -> None:
+    """Проверка админского меню пользователей: список, отзыв сессий и удаление."""
+    # 1. Обычный пользователь не имеет доступа
+    forbidden = await auth_client.get("/api/users")
+    assert forbidden.status_code == 403
+
+    # 2. Администратор получает список
+    list_res = await admin_client.get("/api/users")
+    assert list_res.status_code == 200
+    users = list_res.json()
+    assert len(users) >= 2
+    assert any(u["username"] == second_user.username for u in users)
+
+    # 3. Администратор отзывает сессии пользователя second_user
+    revoke_res = await admin_client.post(f"/api/users/{second_user.user_id}/revoke-sessions")
+    assert revoke_res.status_code == 200
+    assert revoke_res.json()["token_version"] == 2
+
+    # 4. Администратор не может удалить самого себя
+    self_del = await admin_client.delete("/api/users/1")  # admin id is 1 or admin_user.user_id
+    # Получим id текущего админа из me
+    me = (await admin_client.get("/api/auth/me")).json()
+    self_del = await admin_client.delete(f"/api/users/{me['user_id']}")
+    assert self_del.status_code == 400
+
+    # 5. Администратор удаляет second_user
+    del_res = await admin_client.delete(f"/api/users/{second_user.user_id}")
+    assert del_res.status_code == 204
+
+
+@pytest.mark.anyio
+async def test_session_revocation_enforced(
+    client: AsyncClient,
+    admin_client: AsyncClient,
+    session,
+) -> None:
+    """Проверка, что после отзыва сессии старый токен действительно перестает работать (401)."""
+    from taskmanager.core.security import create_access_token, hash_password
+    from taskmanager.models import User
+
+    # Создаем тестового пользователя
+    u = User(username="victim", hashed_password=hash_password("Pass123!"), role="user", is_active=True, token_version=1)
+    session.add(u)
+    await session.commit()
+    await session.refresh(u)
+
+    # Выдаем токен версии 1
+    token_v1 = create_access_token({"sub": str(u.user_id), "role": u.role, "ver": 1})
+    cookies = {settings.auth_cookie_name: token_v1}
+
+    # Запрос с токеном v1 работает
+    r1 = await client.get("/api/auth/me", cookies=cookies)
+    assert r1.status_code == 200
+
+    # Админ отзывает сессии
+    revoke = await admin_client.post(f"/api/users/{u.user_id}/revoke-sessions")
+    assert revoke.status_code == 200
+
+    # Запрос со старым токеном v1 теперь возвращает 401
+    r2 = await client.get("/api/auth/me", cookies=cookies)
+    assert r2.status_code == 401
+    assert "Сессия была отозвана" in r2.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_export_and_import_data(
+    auth_client: AsyncClient,
+    admin_client: AsyncClient,
+    test_user: User,
+    second_user: User,
+) -> None:
+    """Проверка экспорта и импорта данных: как самим пользователем, так и админом для чужого аккаунта."""
+    # 1. Создаем тег, приоритет и задачу для test_user
+    p_res = await auth_client.post(
+        "/api/priority/",
+        json={"priority_name": "Критично", "priority_color": "#ff0000", "priority_sorting_weight": 1},
+    )
+    p_id = p_res.json()["priority_id"]
+
+    t_res = await auth_client.post(
+        "/api/task_tags/",
+        json={"tag_text": "Релиз", "tag_color": "#00ff00"},
+    )
+    t_id = t_res.json()["task_tag_id"]
+
+    task_res = await auth_client.post(
+        "/api/tasks/",
+        json={"title": "Релиз v3.1", "description": "План релиза", "task_priority_id": p_id},
+    )
+    task_id = task_res.json()["task_id"]
+
+    await auth_client.post("/api/task_tags/assign", json={"task_id": task_id, "task_tag_id": t_id})
+    await auth_client.post("/api/tasks/comment", json={"task_id": task_id, "text": "Тестовый комментарий"})
+
+    # 2. Пользователь экспортирует свои данные
+    exp_res = await auth_client.get("/api/users/me/export")
+    assert exp_res.status_code == 200
+    export_json = exp_res.json()
+    assert export_json["username"] == test_user.username
+    assert len(export_json["tasks"]) == 1
+    assert export_json["tasks"][0]["title"] == "Релиз v3.1"
+    assert export_json["tasks"][0]["priority_name"] == "Критично"
+    assert "Релиз" in export_json["tasks"][0]["tags"]
+    assert len(export_json["tasks"][0]["comments"]) == 1
+
+    # 3. Администратор может экспортировать чужие данные
+    admin_exp = await admin_client.get(f"/api/users/{test_user.user_id}/export")
+    assert admin_exp.status_code == 200
+    assert admin_exp.json()["username"] == test_user.username
+
+    # 4. Администратор импортирует эти данные в аккаунт second_user
+    admin_imp = await admin_client.post(f"/api/users/{second_user.user_id}/import", json=export_json)
+    assert admin_imp.status_code == 200
+    summary = admin_imp.json()
+    assert summary["tasks_imported"] == 1
+    assert summary["comments_imported"] == 1
+    assert summary["priorities_imported"] == 1
+    assert summary["tags_imported"] == 1
+
+    # 5. Проверяем, что у second_user теперь есть эта задача
+    u2_token = create_access_token(
+        {"sub": str(second_user.user_id), "role": second_user.role, "ver": second_user.token_version}
+    )
+    u2_res = await auth_client.get("/api/tasks/", cookies={settings.auth_cookie_name: u2_token})
+    assert u2_res.status_code == 200
+    u2_tasks = u2_res.json()
+    assert any(t["title"] == "Релиз v3.1" for t in u2_tasks)

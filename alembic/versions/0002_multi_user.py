@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
         sa.Column("role", sa.String(length=20), server_default="user", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column("token_version", sa.Integer(), server_default="1", nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("user_id", name="pk_users"),
     )

@@ -51,6 +51,9 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False, doc="Хэш пароля")
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", doc="Роль (admin или user)")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, doc="Флаг активности")
+    token_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, doc="Версия токена для инвалидации сессий"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=_utc_now, doc="Дата и время создания"
     )
