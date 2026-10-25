@@ -118,8 +118,8 @@ async def execute_query_get(
 ) -> SqlQueryResponse:
     """Выполняет безопасный пользовательский SQL-запрос через query-параметр."""
     try:
-        columns, rows, count = await service.execute_query(query)
-        return SqlQueryResponse(columns=columns, rows=rows, count=count)
+        columns, rows, count, has_more = await service.execute_query(query)
+        return SqlQueryResponse(columns=columns, rows=rows, count=count, has_more=has_more)
     except SqlSecurityError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -156,8 +156,8 @@ async def execute_query(
 ) -> SqlQueryResponse:
     """Выполняет безопасный пользовательский SQL-запрос через тело запроса."""
     try:
-        columns, rows, count = await service.execute_query(body.query)
-        return SqlQueryResponse(columns=columns, rows=rows, count=count)
+        columns, rows, count, has_more = await service.execute_query(body.query)
+        return SqlQueryResponse(columns=columns, rows=rows, count=count, has_more=has_more)
     except SqlSecurityError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

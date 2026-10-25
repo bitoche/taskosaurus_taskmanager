@@ -47,7 +47,7 @@ class TaskCreate(BaseModel):
         description="Внешняя ссылка на сторонний сервис или таск-трекер",
         examples=["https://tracker.example.com/issue/PROJ-123"],
     )
-    due_date: date | str | None = Field(
+    due_date: date | None = Field(
         default=None,
         description="Дата срока выполнения задачи (YYYY-MM-DD)",
         examples=["2026-10-31"],
@@ -86,11 +86,11 @@ class TaskUpdate(BaseModel):
         max_length=500,
         description="Обновленная ссылка на внешний трекер",
     )
-    due_date: date | str | None = Field(
+    due_date: date | None = Field(
         default=None,
         description="Новая дата срока выполнения (YYYY-MM-DD)",
     )
-    closed_dttm: datetime | str | None = Field(
+    closed_dttm: datetime | None = Field(
         default=None,
         description="Дата и время фактического закрытия задачи",
     )
@@ -318,6 +318,7 @@ class SqlQueryResponse(BaseModel):
         columns: Список имен возвращенных колонок.
         rows: Список строк результата в формате список словарей.
         count: Общее количество возвращенных строк.
+        has_more: Флаг наличия дополнительных строк сверх лимита выборки.
     """
 
     columns: list[str] = Field(
@@ -334,4 +335,9 @@ class SqlQueryResponse(BaseModel):
         default=0,
         description="Количество возвращенных строк",
         examples=[1],
+    )
+    has_more: bool = Field(
+        default=False,
+        description="Флаг наличия дополнительных строк сверх установленного лимита",
+        examples=[False],
     )

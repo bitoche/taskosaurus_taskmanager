@@ -173,10 +173,16 @@ async def test_task_service_execute_query(session: AsyncSession) -> None:
     await service.create(TaskCreate(title="SQL юнит тест", description="Проверка сервиса"))
 
     # Успешный SELECT
-    columns, rows, count = await service.execute_query("SELECT task_id, title FROM task")
+    columns, rows, count, has_more = await service.execute_query("SELECT task_id, title FROM task")
     assert columns == ["task_id", "title"]
     assert count >= 1
+    assert has_more is False
     assert any(r["title"] == "SQL юнит тест" for r in rows)
+
+    # Проверка работы лимита строк
+    columns, rows, count, has_more = await service.execute_query("SELECT task_id, title FROM task", limit=1)
+    assert count == 1
+    assert len(rows) == 1
 
     # Проверка вызова исключения при опасном запросе
     with pytest.raises(SqlSecurityError):
@@ -187,3 +193,36 @@ async def test_task_service_execute_query(session: AsyncSession) -> None:
 
     with pytest.raises(SqlSecurityError):
         await service.execute_query("SELECT 1; DROP TABLE task")
+
+
+@pytest.mark.anyio
+async def test_task_cascade_deletion_on_sqlite(session: AsyncSession) -> None:
+    """Проверка каскадного удаления связанных записей task_tag_x_task в SQLite."""
+    from sqlalchemy import select
+
+    from taskmanager.models import TaskTagXTask
+    from taskmanager.schemas import TagAssign, TagCreate
+    from taskmanager.services.tag_service import TagService
+
+    task_service = TaskService(session)
+    tag_service = TagService(session)
+
+    # Создаем задачу и тег
+    task = await task_service.create(TaskCreate(title="Задача для каскада"))
+    tag = await tag_service.create(TagCreate(tag_color="#FF0000", tag_text="Важное"))
+    await tag_service.assign_to_task(TagAssign(task_tag_id=tag.task_tag_id, task_id=task.task_id))
+
+    # Проверяем, что связь существует
+    links_before = (
+        (await session.execute(select(TaskTagXTask).where(TaskTagXTask.task_id == task.task_id))).scalars().all()
+    )
+    assert len(links_before) == 1
+
+    # Удаляем задачу
+    await task_service.delete(task)
+
+    # Проверяем, что связь удалилась каскадно на уровне базы
+    links_after = (
+        (await session.execute(select(TaskTagXTask).where(TaskTagXTask.task_id == task.task_id))).scalars().all()
+    )
+    assert len(links_after) == 0

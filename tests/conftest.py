@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -27,6 +27,16 @@ test_engine = create_async_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+
+
+@event.listens_for(test_engine.sync_engine, "connect")
+def _set_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """Включает поддержку внешних ключей в тестовой SQLite БД."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.close()
+
+
 TestingSessionLocal = async_sessionmaker(
     bind=test_engine,
     expire_on_commit=False,

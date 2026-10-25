@@ -85,10 +85,12 @@ class TaskService:
         """
         stmt = select(Task).order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
 
-        if date_from and date_to:
+        if date_from:
             d_from = self._parse_date(date_from)
+            stmt = stmt.where(Task.due_date >= d_from)
+        if date_to:
             d_to = self._parse_date(date_to)
-            stmt = stmt.where(Task.due_date >= d_from, Task.due_date <= d_to)
+            stmt = stmt.where(Task.due_date <= d_to)
 
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -114,9 +116,6 @@ class TaskService:
             Созданная сущность Task с присвоенным ID.
         """
         data = dto.model_dump(exclude_unset=True)
-        if "due_date" in data:
-            data["due_date"] = self._parse_date(data["due_date"])
-
         task = Task(**data)
         self.session.add(task)
         await self.session.flush()
@@ -142,10 +141,9 @@ class TaskService:
         """
         data = dto.model_dump(exclude_unset=True)
 
-        if "due_date" in data:
-            data["due_date"] = self._parse_date(data["due_date"])
-        if "closed_dttm" in data:
-            data["closed_dttm"] = self._parse_datetime(data["closed_dttm"])
+        if "closed_dttm" in data and isinstance(data["closed_dttm"], datetime):
+            if data["closed_dttm"].tzinfo is not None:
+                data["closed_dttm"] = data["closed_dttm"].astimezone(UTC).replace(tzinfo=None)
 
         # Автоматическая смена статуса при явной передаче даты закрытия
         if data.get("closed_dttm") is not None:
@@ -175,18 +173,21 @@ class TaskService:
         await self.session.delete(task)
         await self.session.flush()
 
-    async def execute_query(self, query: str) -> tuple[list[str], list[dict[str, Any]], int]:
+    async def execute_query(self, query: str, limit: int = 1000) -> tuple[list[str], list[dict[str, Any]], int, bool]:
         """Выполняет безопасный пользовательский SQL-запрос только для чтения.
 
         Запрос предварительно проверяется на отсутствие запрещенных конструкций,
         комментариев и множественных инструкций. Выполнение происходит в контексте
         READ ONLY на уровне транзакции / подключения.
+        Выборка ограничена безопасным максимумом строк (параметр limit) для предотвращения
+        переполнения оперативной памяти.
 
         Args:
             query: Текст SQL-запроса от пользователя.
+            limit: Максимальное количество строк для выборки (по умолчанию 1000).
 
         Returns:
-            Кортеж из списка имен колонок, списка строк-словарей и общего количества строк.
+            Кортеж из списка имен колонок, списка строк-словарей, общего количества строк и флага has_more.
 
         Raises:
             SqlSecurityError: Если запрос нарушает правила безопасности или произошла ошибка выполнения SQL.
@@ -206,9 +207,12 @@ class TaskService:
 
             result = await self.session.execute(text(clean_sql))
             columns = list(result.keys())
-            raw_rows = result.mappings().all()
+            raw_rows = result.mappings().fetchmany(limit + 1)
+            has_more = len(raw_rows) > limit
+            if has_more:
+                raw_rows = raw_rows[:limit]
             rows = [dict(r) for r in raw_rows]
-            return columns, rows, len(rows)
+            return columns, rows, len(rows), has_more
         except SQLAlchemyError as err:
             orig_msg = str(getattr(err, "orig", err))
             raise SqlSecurityError(f"Ошибка выполнения SQL-запроса: {orig_msg}") from err

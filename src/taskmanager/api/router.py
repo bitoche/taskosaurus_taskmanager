@@ -9,7 +9,6 @@ from taskmanager.api.routes import (
     comments,
     health,
     priorities,
-    remote_db,
     tags,
     tasks,
 )
@@ -25,7 +24,6 @@ api_router.include_router(tasks.router, prefix="/tasks", tags=["Задачи"])
 api_router.include_router(comments.router, prefix="/tasks", tags=["Комментарии"])
 api_router.include_router(tags.router, prefix="/task_tags", tags=["Теги"])
 api_router.include_router(priorities.router, prefix="/priority", tags=["Приоритеты"])
-api_router.include_router(remote_db.router, prefix="/remote_db", tags=["Синхронизация (Legacy)"])
 
 
 # Прямые алиасы для выполнения SQL-запросов (/api/query и /api/query/)

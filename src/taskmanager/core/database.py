@@ -6,6 +6,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -21,6 +22,13 @@ if settings.effective_database_url.startswith("sqlite"):
         echo=settings.debug,
         connect_args={"check_same_thread": False},
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_foreign_keys(dbapi_connection, connection_record):
+        """Включает поддержку внешних ключей и каскадного удаления для SQLite."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.close()
 else:
     engine = create_async_engine(
         settings.effective_database_url,

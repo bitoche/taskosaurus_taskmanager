@@ -188,17 +188,27 @@ async def test_priorities_flow(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_remote_db_stubs(client: AsyncClient) -> None:
-    """Проверка работоспособности эндпоинтов-заглушек синхронизации для webui."""
-    resp = await client.get("/api/remote_db/check_updates")
-    assert resp.status_code == 200
-    assert resp.json()["updates"] is False
+async def test_tasks_single_boundary_date_filtering(client: AsyncClient) -> None:
+    """Проверка раздельной фильтрации задач по date_from и date_to."""
+    await client.post("/api/tasks/", json={"title": "Задача 2026-10-10", "due_date": "2026-10-10"})
+    await client.post("/api/tasks/", json={"title": "Задача 2026-10-20", "due_date": "2026-10-20"})
+    await client.post("/api/tasks/", json={"title": "Задача 2026-10-30", "due_date": "2026-10-30"})
 
-    resp = await client.get("/api/remote_db/sync_download")
-    assert resp.status_code == 200
+    # Фильтр только date_from
+    resp_from = await client.get("/api/tasks/", params={"date_from": "2026-10-20"})
+    assert resp_from.status_code == 200
+    titles_from = [t["title"] for t in resp_from.json()]
+    assert "Задача 2026-10-20" in titles_from
+    assert "Задача 2026-10-30" in titles_from
+    assert "Задача 2026-10-10" not in titles_from
 
-    resp = await client.get("/api/remote_db/sync_upload")
-    assert resp.status_code == 200
+    # Фильтр только date_to
+    resp_to = await client.get("/api/tasks/", params={"date_to": "2026-10-20"})
+    assert resp_to.status_code == 200
+    titles_to = [t["title"] for t in resp_to.json()]
+    assert "Задача 2026-10-10" in titles_to
+    assert "Задача 2026-10-20" in titles_to
+    assert "Задача 2026-10-30" not in titles_to
 
 
 @pytest.mark.anyio
