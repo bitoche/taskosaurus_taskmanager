@@ -140,3 +140,12 @@ class AuthService:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def delete_invite(self, token_str: str) -> bool:
+        """Удаляет (отзывает) инвайт-токен."""
+        invite = await self.session.get(InviteToken, token_str)
+        if not invite:
+            return False
+        await self.session.delete(invite)
+        await self.session.flush()
+        return True

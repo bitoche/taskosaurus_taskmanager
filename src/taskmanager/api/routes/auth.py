@@ -137,6 +137,26 @@ async def list_invites(
     return [InviteRead.model_validate(inv) for inv in invites]
 
 
+@router.delete(
+    "/invites/{token}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить / аннулировать инвайт (только для админа)",
+    description="Удаляет инвайт-токен, делая его непригодным для регистрации.",
+)
+async def delete_invite(
+    token: str,
+    _admin: User = Depends(get_current_admin),
+    service: AuthService = Depends(get_auth_service),
+) -> None:
+    """Удаление инвайта."""
+    deleted = await service.delete_invite(token)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Инвайт не найден",
+        )
+
+
 @router.post(
     "/register-with-invite",
     response_model=UserRead,

@@ -67,6 +67,19 @@ async def cmd_create_invite(args: argparse.Namespace) -> None:
         print(f"  Ссылка для регистрации: /?invite={invite.token}")
 
 
+async def cmd_delete_invite(args: argparse.Namespace) -> None:
+    """Удаление инвайт-токена."""
+    await _init_db()
+    async with async_session_factory() as session:
+        auth = AuthService(session)
+        deleted = await auth.delete_invite(args.token)
+        if not deleted:
+            print(f"[ERROR] Инвайт '{args.token}' не найден.", file=sys.stderr)
+            sys.exit(1)
+        await session.commit()
+        print(f"[OK] Инвайт '{args.token}' успешно удален.")
+
+
 async def cmd_list_users(_args: argparse.Namespace) -> None:
     """Вывод списка пользователей."""
     await _init_db()
@@ -100,6 +113,10 @@ def cli() -> None:
     p_inv.add_argument("--admin", "-a", required=True, help="Логин администратора-создателя")
     p_inv.add_argument("--hours", "-t", type=int, default=48, help="Срок жизни в часах (по умолчанию 48)")
 
+    # delete-invite
+    p_del_inv = subparsers.add_parser("delete-invite", help="Удалить инвайт")
+    p_del_inv.add_argument("--token", "-k", required=True, help="Токен инвайта для удаления")
+
     # list-users
     subparsers.add_parser("list-users", help="Список пользователей")
 
@@ -109,6 +126,8 @@ def cli() -> None:
         asyncio.run(cmd_create_admin(args))
     elif args.command == "create-invite":
         asyncio.run(cmd_create_invite(args))
+    elif args.command == "delete-invite":
+        asyncio.run(cmd_delete_invite(args))
     elif args.command == "list-users":
         asyncio.run(cmd_list_users(args))
 

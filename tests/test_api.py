@@ -120,6 +120,34 @@ async def test_invite_creation_and_registration(
     assert me_resp.status_code == 200
     assert me_resp.json()["username"] == "new_team_member"
 
+    # Создание инвайта и его удаление администратором
+    created2 = await admin_client.post("/api/auth/invites", json={"expires_hours": 12})
+    assert created2.status_code == 201
+    tok2 = created2.json()["token"]
+
+    # Обычный пользователь не может удалить инвайт
+    forb_del = await auth_client.delete(f"/api/auth/invites/{tok2}")
+    assert forb_del.status_code == 403
+
+    # Админ удаляет инвайт
+    del_resp = await admin_client.delete(f"/api/auth/invites/{tok2}")
+    assert del_resp.status_code == 204
+
+    # Повторная попытка удаления возвращает 404
+    del_again = await admin_client.delete(f"/api/auth/invites/{tok2}")
+    assert del_again.status_code == 404
+
+    # Попытка регистрации по удаленному инвайту отклоняется
+    reg_failed = await client.post(
+        "/api/auth/register-with-invite",
+        json={
+            "token": tok2,
+            "username": "intruder_user",
+            "password": "Password123!",
+        },
+    )
+    assert reg_failed.status_code == 400
+
 
 @pytest.mark.anyio
 async def test_tasks_crud_and_status_logic(auth_client: AsyncClient) -> None:
