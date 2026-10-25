@@ -50,12 +50,34 @@ async def _seed_initial_statuses() -> None:
         await session.commit()
 
 
+def _ensure_schema_columns(conn) -> None:
+    """Гарантирует наличие колонок token_version и user_id при старте приложения."""
+    from sqlalchemy import inspect
+    inspector = inspect(conn)
+    tables = inspector.get_table_names()
+
+    if "users" in tables:
+        cols = [c["name"] for c in inspector.get_columns("users")]
+        if "token_version" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1 NOT NULL"))
+
+    for tbl in ["task_priority", "task_tag", "task"]:
+        if tbl in tables:
+            cols = [c["name"] for c in inspector.get_columns(tbl)]
+            if "user_id" not in cols:
+                conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN user_id INTEGER"))
+                first_user = conn.execute(text("SELECT user_id FROM users ORDER BY user_id LIMIT 1")).scalar()
+                if first_user:
+                    conn.execute(text(f"UPDATE {tbl} SET user_id = :uid WHERE user_id IS NULL"), {"uid": first_user})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Управляет жизненным циклом приложения FastAPI.
 
     Выполняет инициализацию при старте:
     - Создает необходимые таблицы, если они отсутствуют.
+    - Гарантирует наличие колонок многопользовательской схемы.
     - Наполняет справочник статусов.
 
     Выполняет завершение при остановке:
@@ -64,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Запуск приложения %s v%s...", settings.app_name, settings.app_version)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_schema_columns)
     await _seed_initial_statuses()
     logger.info("База данных инициализирована. Сервис готов к приему запросов.")
 
