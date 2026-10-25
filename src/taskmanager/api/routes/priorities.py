@@ -3,28 +3,13 @@
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from taskmanager.core.database import get_session
-from taskmanager.models import TaskPriority
+from taskmanager.api.dependencies import get_current_user, get_priority_service
+from taskmanager.models import TaskPriority, User
 from taskmanager.schemas import PriorityCreate, PriorityRead, PriorityUpdate
 from taskmanager.services.priority_service import PriorityService
 
 router = APIRouter()
-
-
-def get_priority_service(
-    session: AsyncSession = Depends(get_session),
-) -> PriorityService:
-    """Внедрение зависимости сервиса приоритетов.
-
-    Args:
-        session: Сессия SQLAlchemy из контекста запроса.
-
-    Returns:
-        Экземпляр PriorityService.
-    """
-    return PriorityService(session)
 
 
 @router.get(
@@ -38,14 +23,15 @@ def get_priority_service(
     response_model=list[PriorityRead],
     status_code=status.HTTP_200_OK,
     summary="Получить все приоритеты",
-    description="Возвращает список приоритетов, отсортированных по весу (sorting_weight).",
+    description="Возвращает список приоритетов текущего пользователя, отсортированных по весу.",
     response_description="Список приоритетов",
 )
 async def get_all_priorities(
+    current_user: User = Depends(get_current_user),
     service: PriorityService = Depends(get_priority_service),
 ) -> Sequence[TaskPriority]:
-    """Возвращает все приоритеты."""
-    return await service.list_all()
+    """Возвращает все приоритеты текущего пользователя."""
+    return await service.list_all(user_id=current_user.user_id)
 
 
 @router.get(
@@ -53,15 +39,16 @@ async def get_all_priorities(
     response_model=PriorityRead,
     status_code=status.HTTP_200_OK,
     summary="Получить приоритет по ID",
-    description="Возвращает информацию о конкретном приоритете.",
+    description="Возвращает информацию о конкретном приоритете текущего пользователя.",
     responses={status.HTTP_404_NOT_FOUND: {"description": "Приоритет не найден"}},
 )
 async def get_priority(
     priority_id: int,
+    current_user: User = Depends(get_current_user),
     service: PriorityService = Depends(get_priority_service),
 ) -> TaskPriority:
     """Ищет приоритет по идентификатору."""
-    priority = await service.get_by_id(priority_id)
+    priority = await service.get_by_id(priority_id, user_id=current_user.user_id)
     if priority is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -81,15 +68,16 @@ async def get_priority(
     response_model=PriorityRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать новый приоритет",
-    description="Добавляет новый приоритет с цветом и весом сортировки.",
+    description="Добавляет новый персональный приоритет пользователя с цветом и весом сортировки.",
     response_description="Созданный приоритет",
 )
 async def create_priority(
     body: PriorityCreate,
+    current_user: User = Depends(get_current_user),
     service: PriorityService = Depends(get_priority_service),
 ) -> TaskPriority:
-    """Создает новый приоритет."""
-    return await service.create(body)
+    """Создает новый приоритет для текущего пользователя."""
+    return await service.create(body, user_id=current_user.user_id)
 
 
 @router.put(
@@ -97,16 +85,17 @@ async def create_priority(
     response_model=PriorityRead,
     status_code=status.HTTP_200_OK,
     summary="Изменить приоритет",
-    description="Обновляет параметры существующего приоритета.",
+    description="Обновляет параметры существующего приоритета пользователя.",
     responses={status.HTTP_404_NOT_FOUND: {"description": "Приоритет не найден"}},
 )
 async def update_priority(
     priority_id: int,
     body: PriorityUpdate,
+    current_user: User = Depends(get_current_user),
     service: PriorityService = Depends(get_priority_service),
 ) -> TaskPriority:
     """Обновляет параметры приоритета."""
-    priority = await service.get_by_id(priority_id)
+    priority = await service.get_by_id(priority_id, user_id=current_user.user_id)
     if priority is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -124,10 +113,11 @@ async def update_priority(
 )
 async def delete_priority(
     priority_id: int,
+    current_user: User = Depends(get_current_user),
     service: PriorityService = Depends(get_priority_service),
 ) -> None:
     """Удаляет приоритет."""
-    priority = await service.get_by_id(priority_id)
+    priority = await service.get_by_id(priority_id, user_id=current_user.user_id)
     if priority is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

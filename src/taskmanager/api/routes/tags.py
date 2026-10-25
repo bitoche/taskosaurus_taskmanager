@@ -3,26 +3,14 @@
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from taskmanager.core.database import get_session
-from taskmanager.models import TaskTag, TaskTagXTask
+from taskmanager.api.dependencies import get_current_user, get_tag_service
+from taskmanager.core.exceptions import EntityNotFoundError
+from taskmanager.models import TaskTag, TaskTagXTask, User
 from taskmanager.schemas import TagAssign, TagCreate, TagRead, TagUpdate, TagWithTasks
 from taskmanager.services.tag_service import TagService
 
 router = APIRouter()
-
-
-def get_tag_service(session: AsyncSession = Depends(get_session)) -> TagService:
-    """Внедрение зависимости сервиса тегов.
-
-    Args:
-        session: Сессия SQLAlchemy из контекста запроса.
-
-    Returns:
-        Экземпляр TagService.
-    """
-    return TagService(session)
 
 
 @router.get(
@@ -36,14 +24,15 @@ def get_tag_service(session: AsyncSession = Depends(get_session)) -> TagService:
     response_model=list[TagRead],
     status_code=status.HTTP_200_OK,
     summary="Получить все теги",
-    description="Возвращает справочник всех существующих тегов.",
+    description="Возвращает справочник персональных тегов текущего пользователя.",
     response_description="Список тегов",
 )
 async def get_all_tags(
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> Sequence[TaskTag]:
-    """Возвращает все теги."""
-    return await service.list_all()
+    """Возвращает все теги текущего пользователя."""
+    return await service.list_all(user_id=current_user.user_id)
 
 
 @router.get(
@@ -51,14 +40,15 @@ async def get_all_tags(
     response_model=list[TagWithTasks],
     status_code=status.HTTP_200_OK,
     summary="Получить связи тегов с задачами",
-    description="Возвращает список всех привязок тегов к задачам.",
+    description="Возвращает список всех привязок тегов к задачам текущего пользователя.",
     response_description="Список связей тег-задача",
 )
 async def get_all_tags_with_tasks(
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> Sequence[TaskTagXTask]:
-    """Возвращает все ассоциации между тегами и задачами."""
-    return await service.list_assignments()
+    """Возвращает все ассоциации между тегами и задачами текущего пользователя."""
+    return await service.list_assignments(user_id=current_user.user_id)
 
 
 @router.post(
@@ -72,15 +62,16 @@ async def get_all_tags_with_tasks(
     response_model=TagRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать новый тег",
-    description="Добавляет новый тег в справочник.",
+    description="Добавляет новый персональный тег для текущего пользователя.",
     response_description="Созданный тег",
 )
 async def create_tag(
     body: TagCreate,
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> TaskTag:
     """Создает новый тег."""
-    return await service.create(body)
+    return await service.create(body, user_id=current_user.user_id)
 
 
 @router.post(
@@ -88,15 +79,22 @@ async def create_tag(
     response_model=TagWithTasks,
     status_code=status.HTTP_201_CREATED,
     summary="Привязать тег к задаче",
-    description="Назначает тег на указанную задачу.",
+    description="Назначает тег на задачу текущего пользователя.",
     response_description="Созданная связь",
 )
 async def assign_tag_to_task(
     body: TagAssign,
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> TaskTagXTask:
     """Назначает тег на задачу."""
-    return await service.assign_to_task(body)
+    try:
+        return await service.assign_to_task(body, user_id=current_user.user_id)
+    except EntityNotFoundError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=err.message,
+        ) from err
 
 
 @router.put(
@@ -110,10 +108,11 @@ async def assign_tag_to_task(
 async def update_tag(
     task_tag_id: int,
     body: TagUpdate,
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> TaskTag:
     """Обновляет параметры тега."""
-    tag = await service.get_by_id(task_tag_id)
+    tag = await service.get_by_id(task_tag_id, user_id=current_user.user_id)
     if tag is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -126,30 +125,32 @@ async def update_tag(
     "/unassign/{task_tag_id}/task/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Отвязать тег от задачи",
-    description="Удаляет привязку конкретного тега к конкретной задаче.",
+    description="Удаляет привязку конкретного тега к конкретной задаче пользователя.",
 )
 async def unassign_tag_from_task(
     task_tag_id: int,
     task_id: int,
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> None:
     """Удаляет связь тега с задачей."""
-    await service.unassign_from_task(tag_id=task_tag_id, task_id=task_id)
+    await service.unassign_from_task(tag_id=task_tag_id, task_id=task_id, user_id=current_user.user_id)
 
 
 @router.delete(
     "/{task_tag_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить тег глобально",
-    description="Удаляет тег из системы и каскадно снимает его со всех задач.",
+    description="Удаляет персональный тег пользователя и каскадно снимает его со всех задач.",
     responses={status.HTTP_404_NOT_FOUND: {"description": "Тег не найден"}},
 )
 async def delete_tag(
     task_tag_id: int,
+    current_user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ) -> None:
     """Удаляет тег."""
-    tag = await service.get_by_id(task_tag_id)
+    tag = await service.get_by_id(task_tag_id, user_id=current_user.user_id)
     if tag is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

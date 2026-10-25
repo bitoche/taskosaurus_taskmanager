@@ -3,11 +3,10 @@
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from taskmanager.core.database import get_session
+from taskmanager.api.dependencies import get_current_user, get_task_service
 from taskmanager.core.exceptions import SqlSecurityError
-from taskmanager.models import Task
+from taskmanager.models import Task, User
 from taskmanager.schemas import (
     SqlQueryRequest,
     SqlQueryResponse,
@@ -18,18 +17,6 @@ from taskmanager.schemas import (
 from taskmanager.services.task_service import TaskService
 
 router = APIRouter()
-
-
-def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskService:
-    """Внедрение зависимости сервиса задач.
-
-    Args:
-        session: Сессия SQLAlchemy из контекста запроса.
-
-    Returns:
-        Экземпляр TaskService.
-    """
-    return TaskService(session)
 
 
 @router.get(
@@ -43,7 +30,7 @@ def get_task_service(session: AsyncSession = Depends(get_session)) -> TaskServic
     response_model=list[TaskRead],
     status_code=status.HTTP_200_OK,
     summary="Получить список задач",
-    description="Возвращает список всех задач. Поддерживает фильтрацию по диапазону дат выполнения (due_date).",
+    description="Возвращает список всех задач текущего пользователя. Поддерживает фильтрацию по диапазону дат.",
     response_description="Список задач",
 )
 async def list_tasks(
@@ -57,11 +44,16 @@ async def list_tasks(
         description="Конечная дата в формате YYYY-MM-DD",
         examples=["2026-10-31"],
     ),
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Sequence[Task]:
-    """Получает список задач с опциональной фильтрацией по диапазону дат."""
+    """Получает список задач текущего пользователя с опциональной фильтрацией по диапазону дат."""
     try:
-        return await service.list_tasks(date_from=date_from, date_to=date_to)
+        return await service.list_tasks(
+            user_id=current_user.user_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
     except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,10 +80,11 @@ async def list_tasks_between(
         description="Конечная дата (YYYY-MM-DD)",
         examples=["2026-10-31"],
     ),
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Sequence[Task]:
     """Возвращает задачи в диапазоне дат (алиас эндпоинта /between)."""
-    return await list_tasks(date_from=date_from, date_to=date_to, service=service)
+    return await list_tasks(date_from=date_from, date_to=date_to, current_user=current_user, service=service)
 
 
 @router.get(
@@ -101,10 +94,9 @@ async def list_tasks_between(
     summary="Выполнить безопасный SQL-запрос к базе данных задач (GET)",
     description=(
         "Выполняет пользовательский SELECT SQL-запрос к базе данных задач через GET-параметр. "
-        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
-        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
+        "Для обычных пользователей результат изолирован их данными; для администратора доступна вся БД."
     ),
-    response_description="Результаты запроса (колонки, строки, количество)",
+    response_description="Результаты запроса (колонки, строки, количество, признак изоляции)",
 )
 @router.get(
     "/query/",
@@ -114,12 +106,19 @@ async def list_tasks_between(
 )
 async def execute_query_get(
     query: str = Query(..., description="SQL-запрос SELECT", examples=["SELECT * FROM task"]),
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> SqlQueryResponse:
     """Выполняет безопасный пользовательский SQL-запрос через query-параметр."""
     try:
-        columns, rows, count, has_more = await service.execute_query(query)
-        return SqlQueryResponse(columns=columns, rows=rows, count=count, has_more=has_more)
+        columns, rows, count, has_more, is_isolated = await service.execute_query(query, user=current_user)
+        return SqlQueryResponse(
+            columns=columns,
+            rows=rows,
+            count=count,
+            has_more=has_more,
+            is_isolated=is_isolated,
+        )
     except SqlSecurityError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -138,11 +137,10 @@ async def execute_query_get(
     status_code=status.HTTP_200_OK,
     summary="Выполнить безопасный SQL-запрос к базе данных задач (POST)",
     description=(
-        "Выполняет пользовательский SELECT SQL-запрос к базе данных задач в режиме только для чтения (READ ONLY). "
-        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
-        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
+        "Выполняет пользовательский SELECT SQL-запрос к базе данных в режиме только для чтения. "
+        "Для обычных пользователей результат изолирован их данными; для администратора доступна вся БД."
     ),
-    response_description="Результаты запроса (колонки, строки, количество)",
+    response_description="Результаты запроса (колонки, строки, количество, признак изоляции)",
 )
 @router.post(
     "/query/",
@@ -152,12 +150,19 @@ async def execute_query_get(
 )
 async def execute_query(
     body: SqlQueryRequest,
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> SqlQueryResponse:
     """Выполняет безопасный пользовательский SQL-запрос через тело запроса."""
     try:
-        columns, rows, count, has_more = await service.execute_query(body.query)
-        return SqlQueryResponse(columns=columns, rows=rows, count=count, has_more=has_more)
+        columns, rows, count, has_more, is_isolated = await service.execute_query(body.query, user=current_user)
+        return SqlQueryResponse(
+            columns=columns,
+            rows=rows,
+            count=count,
+            has_more=has_more,
+            is_isolated=is_isolated,
+        )
     except SqlSecurityError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,15 +180,16 @@ async def execute_query(
     response_model=TaskRead,
     status_code=status.HTTP_200_OK,
     summary="Получить задачу по ID",
-    description="Возвращает детальную информацию о конкретной задаче.",
+    description="Возвращает детальную информацию о конкретной задаче текущего пользователя.",
     responses={status.HTTP_404_NOT_FOUND: {"description": "Задача не найдена"}},
 )
 async def get_task(
     task_id: int,
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Task:
-    """Ищет и возвращает задачу по её первичному ключу."""
-    task = await service.get_by_id(task_id)
+    """Ищет и возвращает задачу по её ID и владельцу."""
+    task = await service.get_by_id(task_id, user_id=current_user.user_id)
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -203,16 +209,17 @@ async def get_task(
     response_model=TaskRead,
     status_code=status.HTTP_201_CREATED,
     summary="Создать новую задачу",
-    description="Создает задачу с переданными параметрами и возвращает созданный объект.",
+    description="Создает задачу для текущего пользователя и возвращает созданный объект.",
     response_description="Созданная задача",
 )
 async def create_task(
     body: TaskCreate,
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Task:
-    """Создает новую задачу."""
+    """Создает новую задачу для текущего пользователя."""
     try:
-        return await service.create(body)
+        return await service.create(body, user_id=current_user.user_id)
     except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,10 +238,11 @@ async def create_task(
 async def update_task(
     task_id: int,
     body: TaskUpdate,
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Task:
-    """Обновляет задачу по идентификатору."""
-    task = await service.get_by_id(task_id)
+    """Обновляет задачу текущего пользователя по идентификатору."""
+    task = await service.get_by_id(task_id, user_id=current_user.user_id)
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -253,15 +261,16 @@ async def update_task(
     "/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Удалить задачу",
-    description="Удаляет задачу и все связанные с ней комментарии.",
+    description="Удаляет задачу текущего пользователя и все связанные с ней комментарии.",
     responses={status.HTTP_404_NOT_FOUND: {"description": "Задача не найдена"}},
 )
 async def delete_task(
     task_id: int,
+    current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> None:
-    """Удаляет задачу по её идентификатору."""
-    task = await service.get_by_id(task_id)
+    """Удаляет задачу текущего пользователя."""
+    task = await service.get_by_id(task_id, user_id=current_user.user_id)
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

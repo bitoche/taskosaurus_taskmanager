@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from taskmanager.core.exceptions import SqlSecurityError
-from taskmanager.models import Task
+from taskmanager.models import Task, User
 from taskmanager.models.enums import TaskStatusEnum
 from taskmanager.schemas import TaskCreate, TaskUpdate
 from taskmanager.services.sql_guard import validate_and_clean_sql
@@ -68,22 +68,26 @@ class TaskService:
 
     async def list_tasks(
         self,
+        user_id: int,
         date_from: date | str | None = None,
         date_to: date | str | None = None,
     ) -> Sequence[Task]:
-        """Возвращает список задач, опционально отфильтрованный по диапазону дат.
+        """Возвращает список задач пользователя, опционально отфильтрованный по диапазону дат.
 
         Сортировка производится по дате срока выполнения (nulls last)
         и идентификатору задачи.
 
         Args:
+            user_id: Идентификатор владельца задач.
             date_from: Начальная дата диапазона (включительно).
             date_to: Конечная дата диапазона (включительно).
 
         Returns:
             Последовательность найденных сущностей Task.
         """
-        stmt = select(Task).order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
+        stmt = (
+            select(Task).where(Task.user_id == user_id).order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
+        )
 
         if date_from:
             d_from = self._parse_date(date_from)
@@ -95,28 +99,32 @@ class TaskService:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def get_by_id(self, task_id: int) -> Task | None:
-        """Ищет задачу по её уникальному идентификатору.
+    async def get_by_id(self, task_id: int, user_id: int) -> Task | None:
+        """Ищет задачу по её уникальному идентификатору и владельцу.
 
         Args:
             task_id: ID задачи.
+            user_id: ID владельца задачи.
 
         Returns:
-            Сущность Task или None, если задача не найдена.
+            Сущность Task или None, если задача не найдена или принадлежит другому пользователю.
         """
-        return await self.session.get(Task, task_id)
+        stmt = select(Task).where(Task.task_id == task_id, Task.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
-    async def create(self, dto: TaskCreate) -> Task:
-        """Создает новую задачу в базе данных.
+    async def create(self, dto: TaskCreate, user_id: int) -> Task:
+        """Создает новую задачу для указанного пользователя.
 
         Args:
             dto: Схема с данными новой задачи.
+            user_id: Идентификатор пользователя-создателя.
 
         Returns:
             Созданная сущность Task с присвоенным ID.
         """
         data = dto.model_dump(exclude_unset=True)
-        task = Task(**data)
+        task = Task(**data, user_id=user_id)
         self.session.add(task)
         await self.session.flush()
         await self.session.refresh(task)
@@ -173,21 +181,29 @@ class TaskService:
         await self.session.delete(task)
         await self.session.flush()
 
-    async def execute_query(self, query: str, limit: int = 1000) -> tuple[list[str], list[dict[str, Any]], int, bool]:
+    async def execute_query(
+        self,
+        query: str,
+        user: User,
+        limit: int = 1000,
+    ) -> tuple[list[str], list[dict[str, Any]], int, bool, bool]:
         """Выполняет безопасный пользовательский SQL-запрос только для чтения.
 
         Запрос предварительно проверяется на отсутствие запрещенных конструкций,
         комментариев и множественных инструкций. Выполнение происходит в контексте
         READ ONLY на уровне транзакции / подключения.
-        Выборка ограничена безопасным максимумом строк (параметр limit) для предотвращения
-        переполнения оперативной памяти.
+
+        Для администраторов запрос выполняется по всей базе данных без ограничений.
+        Для обычных пользователей запрос изолируется через безопасную CTE-обертку,
+        ограничивающую выборку только строками текущего пользователя.
 
         Args:
             query: Текст SQL-запроса от пользователя.
+            user: Текущий аутентифицированный пользователь.
             limit: Максимальное количество строк для выборки (по умолчанию 1000).
 
         Returns:
-            Кортеж из списка имен колонок, списка строк-словарей, общего количества строк и флага has_more.
+            Кортеж (columns, rows, count, has_more, is_isolated).
 
         Raises:
             SqlSecurityError: Если запрос нарушает правила безопасности или произошла ошибка выполнения SQL.
@@ -199,20 +215,57 @@ class TaskService:
         is_sqlite = dialect_name == "sqlite"
         is_postgres = dialect_name == "postgresql"
 
+        is_admin = user.role == "admin"
+        is_isolated = not is_admin
+
+        params: dict[str, Any] = {}
+        target_sql = clean_sql
+
+        if is_isolated:
+            params["current_user_id"] = user.user_id
+            schema_p = "main." if is_sqlite else "public."
+            cte_prefix = (
+                f"WITH task AS (SELECT * FROM {schema_p}task WHERE user_id = :current_user_id),\n"
+                f"     task_priority AS (SELECT * FROM {schema_p}task_priority WHERE user_id = :current_user_id),\n"
+                f"     task_tag AS (SELECT * FROM {schema_p}task_tag WHERE user_id = :current_user_id),\n"
+                f"     task_comment AS (\n"
+                f"         SELECT tc.* FROM {schema_p}task_comment tc\n"
+                f"         JOIN {schema_p}task t ON tc.task_id = t.task_id\n"
+                f"         WHERE t.user_id = :current_user_id\n"
+                f"     ),\n"
+                f"     task_tag_x_task AS (\n"
+                f"         SELECT xt.* FROM {schema_p}task_tag_x_task xt\n"
+                f"         JOIN {schema_p}task t ON xt.task_id = t.task_id\n"
+                f"         WHERE t.user_id = :current_user_id\n"
+                f"     ),\n"
+                f"     users AS (\n"
+                f"         SELECT user_id, username, email, role, created_at\n"
+                f"         FROM {schema_p}users WHERE user_id = :current_user_id\n"
+                f"     )\n"
+            )
+            trimmed = clean_sql.lstrip()
+            if trimmed.upper().startswith("WITH"):
+                # Объединяем существующий WITH с нашими CTE
+                rest_of_query = trimmed[4:].lstrip()
+                target_sql = f"{cte_prefix}, {rest_of_query}"
+            else:
+                target_sql = f"{cte_prefix} {clean_sql}"
+
         try:
             if is_sqlite:
                 await self.session.execute(text("PRAGMA query_only = ON"))
             elif is_postgres:
                 await self.session.execute(text("SET TRANSACTION READ ONLY"))
 
-            result = await self.session.execute(text(clean_sql))
+            stmt = text(target_sql)
+            result = await self.session.execute(stmt, params)
             columns = list(result.keys())
             raw_rows = result.mappings().fetchmany(limit + 1)
             has_more = len(raw_rows) > limit
             if has_more:
                 raw_rows = raw_rows[:limit]
             rows = [dict(r) for r in raw_rows]
-            return columns, rows, len(rows), has_more
+            return columns, rows, len(rows), has_more, is_isolated
         except SQLAlchemyError as err:
             orig_msg = str(getattr(err, "orig", err))
             raise SqlSecurityError(f"Ошибка выполнения SQL-запроса: {orig_msg}") from err

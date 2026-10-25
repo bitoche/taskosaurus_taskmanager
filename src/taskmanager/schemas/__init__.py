@@ -341,3 +341,62 @@ class SqlQueryResponse(BaseModel):
         description="Флаг наличия дополнительных строк сверх установленного лимита",
         examples=[False],
     )
+    is_isolated: bool = Field(
+        default=False,
+        description="Применена ли автоматическая изоляция строк по текущему пользователю",
+        examples=[True],
+    )
+
+
+# ── Аутентификация и пользователи (Users & Auth) ──────────────────────────────
+
+
+class UserRead(BaseModel):
+    """Схема профиля пользователя."""
+
+    user_id: int = Field(description="Идентификатор пользователя")
+    username: str = Field(description="Логин пользователя")
+    email: str | None = Field(default=None, description="Электронная почта")
+    role: str = Field(description="Роль пользователя (admin или user)")
+    is_active: bool = Field(description="Активен ли аккаунт")
+    created_at: datetime = Field(description="Дата и время регистрации")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserLogin(BaseModel):
+    """Схема запроса на аутентификацию."""
+
+    username: str = Field(..., min_length=1, max_length=100, description="Имя пользователя")
+    password: str = Field(..., min_length=1, description="Пароль")
+
+
+class InviteCreate(BaseModel):
+    """Схема генерации инвайт-токена администратором."""
+
+    expires_hours: int | None = Field(
+        default=None,
+        ge=1,
+        le=720,
+        description="Срок действия инвайта в часах (по умолчанию из настроек системы)",
+    )
+
+
+class InviteRead(BaseModel):
+    """Схема отображения инвайт-токена."""
+
+    token: str = Field(description="Секретный токен приглашения")
+    created_by_user_id: int = Field(description="ID администратора, создавшего инвайт")
+    expires_at: datetime = Field(description="Срок действия инвайта")
+    is_used: bool = Field(description="Флаг использования")
+    created_at: datetime = Field(description="Время создания")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegisterWithInvite(BaseModel):
+    """Схема регистрации нового пользователя по закрытому приглашению."""
+
+    token: str = Field(..., min_length=10, max_length=64, description="Инвайт-токен")
+    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_\-\.]+$", description="Логин")
+    password: str = Field(..., min_length=8, max_length=128, description="Надежный пароль")

@@ -64,6 +64,53 @@ class Settings(BaseSettings):
         description="Количество архивных файлов логов при ротации",
     )
 
+    # Аутентификация, токены и безопасность
+    secret_key: str = Field(
+        default="taskmanager-secret-key-change-in-production-min32chars!",
+        description="Секретный ключ для подписи JWT-токенов сессий",
+    )
+    access_token_expire_minutes: int = Field(
+        default=60 * 24,
+        ge=1,
+        description="Интервал протухания токена сессии в минутах (по умолчанию 24 часа)",
+    )
+    invite_token_expire_hours: int = Field(
+        default=48,
+        ge=1,
+        description="Интервал протухания инвайт-токена в часах (по умолчанию 48 часов)",
+    )
+    auth_cookie_name: str = Field(
+        default="tm_session",
+        description="Имя HttpOnly cookie для сессионного токена",
+    )
+    auth_cookie_secure: bool = Field(
+        default=False,
+        description="Флаг Secure для сессионной cookie (true в production с HTTPS)",
+    )
+    auth_cookie_samesite: str = Field(
+        default="lax",
+        description="Политика SameSite для сессионной cookie (lax, strict или none)",
+    )
+    brute_force_max_attempts: int = Field(
+        default=5,
+        ge=1,
+        description="Максимальное количество неудачных попыток входа до блокировки",
+    )
+    brute_force_window_seconds: int = Field(
+        default=300,
+        ge=10,
+        description="Окно отслеживания попыток в секундах (5 минут)",
+    )
+    brute_force_lockout_seconds: int = Field(
+        default=900,
+        ge=10,
+        description="Длительность блокировки после исчерпания попыток в секундах (15 минут)",
+    )
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5001", "http://127.0.0.1:5001", "http://localhost:3000", "http://127.0.0.1:3000"],
+        description="Список разрешенных CORS-ориджинов для работы с credentials",
+    )
+
     # Параметры подключения к базе данных
     database_url: str | None = Field(
         default=None,

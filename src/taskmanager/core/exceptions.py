@@ -55,3 +55,27 @@ class SqlSecurityError(DomainError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class AuthError(DomainError):
+    """Ошибка аутентификации или авторизации."""
+
+    def __init__(self, message: str = "Ошибка аутентификации") -> None:
+        super().__init__(message)
+
+
+class RateLimitExceededError(DomainError):
+    """Превышен лимит попыток входа (защита от брутфорса)."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        message = f"Слишком много неудачных попыток входа. Попробуйте через {retry_after_seconds} сек."
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
+class UserAlreadyExistsError(DomainError):
+    """Пользователь с таким логином уже существует."""
+
+    def __init__(self, username: str) -> None:
+        super().__init__(f"Пользователь с именем '{username}' уже существует")
+        self.username = username

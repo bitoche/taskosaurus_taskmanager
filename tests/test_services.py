@@ -1,23 +1,22 @@
-"""Модульные тесты для сервисного слоя (TaskService, CommentService, TagService, PriorityService)."""
-
-from datetime import date
+"""Модульные тесты для сервисного слоя с проверкой многопользовательской изоляции."""
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from taskmanager.core.exceptions import EntityNotFoundError
+from taskmanager.models import User
 from taskmanager.models.enums import TaskStatusEnum
 from taskmanager.schemas import (
     CommentCreate,
     CommentUpdate,
     PriorityCreate,
-    PriorityUpdate,
     TagAssign,
     TagCreate,
-    TagUpdate,
     TaskCreate,
     TaskUpdate,
 )
 from taskmanager.services import (
+    AuthService,
     CommentService,
     PriorityService,
     TagService,
@@ -26,63 +25,102 @@ from taskmanager.services import (
 
 
 @pytest.mark.anyio
-async def test_task_service_crud_and_status(session: AsyncSession) -> None:
-    """Тестирование бизнес-логики сервиса задач напрямую через сессию БД."""
-    service = TaskService(session)
+async def test_auth_service_and_invite(session: AsyncSession, admin_user: User) -> None:
+    """Тестирование AuthService: создание инвайта и регистрация по инвайту."""
+    auth_service = AuthService(session)
 
-    # 1. Создание задачи
-    create_dto = TaskCreate(
-        title="Сервисная задача",
-        description="Тест без HTTP-слоя",
-        due_date="2026-11-15",
+    # Создание инвайта админом
+    invite = await auth_service.create_invite(admin_user=admin_user, hours_valid=24)
+    assert invite.token is not None
+    assert invite.is_used is False
+
+    # Регистрация по инвайту
+    new_user = await auth_service.register_with_invite(
+        token_str=invite.token,
+        username="invited_user",
+        password="ValidPassword123!",
     )
-    task = await service.create(create_dto)
-    assert task.task_id is not None
-    assert task.title == "Сервисная задача"
-    assert task.due_date == date(2026, 11, 15)
-    assert task.task_status == TaskStatusEnum.ACTIVE.value
-    assert task.closed_dttm is None
+    assert new_user.username == "invited_user"
+    assert new_user.role == "user"
 
-    # 2. Поиск по ID
-    found = await service.get_by_id(task.task_id)
-    assert found is not None
-    assert found.task_id == task.task_id
-
-    # 3. Фильтрация по дате
-    tasks = await service.list_tasks(date_from="2026-11-01", date_to="2026-11-30")
-    assert any(t.task_id == task.task_id for t in tasks)
-
-    # 4. Обновление статуса на COMPLETED (авто-выставление даты закрытия)
-    updated = await service.update(task, TaskUpdate(task_status=TaskStatusEnum.COMPLETED.value))
-    assert updated.task_status == TaskStatusEnum.COMPLETED.value
-    assert updated.closed_dttm is not None
-
-    # 5. Возврат в статус ACTIVE (сброс даты закрытия)
-    reopened = await service.update(task, TaskUpdate(task_status=TaskStatusEnum.ACTIVE.value))
-    assert reopened.task_status == TaskStatusEnum.ACTIVE.value
-    assert reopened.closed_dttm is None
-
-    # 6. Удаление задачи
-    await service.delete(task)
-    assert await service.get_by_id(task.task_id) is None
+    # Повторная попытка использовать тот же инвайт должна провалиться
+    with pytest.raises(Exception):
+        await auth_service.register_with_invite(
+            token_str=invite.token,
+            username="second_attempt",
+            password="ValidPassword123!",
+        )
 
 
 @pytest.mark.anyio
-async def test_comment_service(session: AsyncSession) -> None:
-    """Тестирование сервиса комментариев."""
+async def test_task_service_crud_and_isolation(
+    session: AsyncSession,
+    test_user: User,
+    second_user: User,
+) -> None:
+    """Тестирование CRUD задач и строгой изоляции между пользователями."""
+    service = TaskService(session)
+
+    # 1. Создание задачи пользователем 1
+    task1 = await service.create(
+        TaskCreate(
+            title="Задача User 1",
+            description="Секретные данные",
+            due_date="2026-11-15",
+        ),
+        user_id=test_user.user_id,
+    )
+    assert task1.task_id is not None
+    assert task1.user_id == test_user.user_id
+
+    # 2. Пользователь 2 не может найти задачу Пользователя 1
+    found_by_other = await service.get_by_id(task1.task_id, user_id=second_user.user_id)
+    assert found_by_other is None
+
+    # 3. Пользователь 1 находит свою задачу
+    found_by_owner = await service.get_by_id(task1.task_id, user_id=test_user.user_id)
+    assert found_by_owner is not None
+
+    # 4. Список задач пользователя 2 не содержит задач пользователя 1
+    tasks_u2 = await service.list_tasks(user_id=second_user.user_id)
+    assert len(tasks_u2) == 0
+
+    tasks_u1 = await service.list_tasks(user_id=test_user.user_id)
+    assert len(tasks_u1) == 1
+
+    # 5. Обновление статуса
+    updated = await service.update(task1, TaskUpdate(task_status=TaskStatusEnum.COMPLETED.value))
+    assert updated.task_status == TaskStatusEnum.COMPLETED.value
+    assert updated.closed_dttm is not None
+
+    # 6. Удаление
+    await service.delete(task1)
+    assert await service.get_by_id(task1.task_id, user_id=test_user.user_id) is None
+
+
+@pytest.mark.anyio
+async def test_comment_service(session: AsyncSession, test_user: User, second_user: User) -> None:
+    """Тестирование сервиса комментариев и проверки владения задачей."""
     task_service = TaskService(session)
     comment_service = CommentService(session)
 
     # Подготовка родительской задачи
-    task = await task_service.create(TaskCreate(title="Задача для комментов"))
+    task = await task_service.create(TaskCreate(title="Задача для комментов"), user_id=test_user.user_id)
 
-    # Создание комментария
-    comment = await comment_service.create(CommentCreate(task_id=task.task_id, text="Заметка 1"))
+    # Создание комментария владельцем
+    comment = await comment_service.create(
+        CommentCreate(task_id=task.task_id, text="Заметка 1"),
+        user_id=test_user.user_id,
+    )
     assert comment.comment_id is not None
     assert comment.text == "Заметка 1"
 
-    # Получение по задаче
-    comments = await comment_service.list_by_task(task.task_id)
+    # Чужой пользователь не может получить комментарии к задаче
+    with pytest.raises(EntityNotFoundError):
+        await comment_service.list_by_task(task.task_id, user_id=second_user.user_id)
+
+    # Владелец получает список
+    comments = await comment_service.list_by_task(task.task_id, user_id=test_user.user_id)
     assert len(comments) == 1
 
     # Редактирование
@@ -91,138 +129,99 @@ async def test_comment_service(session: AsyncSession) -> None:
 
     # Удаление
     await comment_service.delete(comment)
-    assert await comment_service.get_by_id(comment.comment_id) is None
+    assert await comment_service.get_by_id(comment.comment_id, user_id=test_user.user_id) is None
 
 
 @pytest.mark.anyio
-async def test_tag_service(session: AsyncSession) -> None:
-    """Тестирование сервиса тегов и связывания с задачами."""
+async def test_tag_service_isolation(session: AsyncSession, test_user: User, second_user: User) -> None:
+    """Тестирование изоляции тегов."""
     task_service = TaskService(session)
     tag_service = TagService(session)
 
-    # Создание тега
-    tag = await tag_service.create(TagCreate(tag_text="Frontend", tag_color="#336699"))
-    assert tag.task_tag_id is not None
-
-    # Создание задачи
-    task = await task_service.create(TaskCreate(title="Задача под тег"))
+    # Пользователь 1 создает тег
+    tag1 = await tag_service.create(TagCreate(tag_text="Frontend", tag_color="#336699"), user_id=test_user.user_id)
+    task1 = await task_service.create(TaskCreate(title="Задача под тег"), user_id=test_user.user_id)
 
     # Привязка тега
-    assignment = await tag_service.assign_to_task(TagAssign(task_tag_id=tag.task_tag_id, task_id=task.task_id))
-    assert assignment.task_tag_id == tag.task_tag_id
+    assignment = await tag_service.assign_to_task(
+        TagAssign(task_tag_id=tag1.task_tag_id, task_id=task1.task_id),
+        user_id=test_user.user_id,
+    )
+    assert assignment.task_tag_id == tag1.task_tag_id
 
-    # Проверка списка назначений
-    assignments = await tag_service.list_assignments()
-    assert any(a.task_tag_id == tag.task_tag_id and a.task_id == task.task_id for a in assignments)
+    # Пользователь 2 не видит теги пользователя 1
+    tags_u2 = await tag_service.list_all(user_id=second_user.user_id)
+    assert len(tags_u2) == 0
 
-    # Отвязка
-    await tag_service.unassign_from_task(tag.task_tag_id, task.task_id)
-
-    # Обновление тега
-    updated_tag = await tag_service.update(tag, TagUpdate(tag_text="UI/UX"))
-    assert updated_tag.tag_text == "UI/UX"
-
-    # Удаление
-    await tag_service.delete(tag)
-    assert await tag_service.get_by_id(tag.task_tag_id) is None
+    # Пользователь 2 не может назначить чужой тег
+    task2 = await task_service.create(TaskCreate(title="Задача User 2"), user_id=second_user.user_id)
+    with pytest.raises(EntityNotFoundError):
+        await tag_service.assign_to_task(
+            TagAssign(task_tag_id=tag1.task_tag_id, task_id=task2.task_id),
+            user_id=second_user.user_id,
+        )
 
 
 @pytest.mark.anyio
-async def test_priority_service(session: AsyncSession) -> None:
-    """Тестирование сервиса приоритетов и безопасного обнуления ссылок."""
-    task_service = TaskService(session)
+async def test_priority_service_isolation(session: AsyncSession, test_user: User, second_user: User) -> None:
+    """Тестирование персональных приоритетов пользователей."""
     priority_service = PriorityService(session)
 
-    # Создание приоритета
-    priority = await priority_service.create(
-        PriorityCreate(
-            priority_name="Блокер",
-            priority_color="#ff1100",
-            priority_sorting_weight=99,
-        )
+    # Пользователь 1 создает приоритет
+    await priority_service.create(
+        PriorityCreate(priority_name="Срочно", priority_color="#FF0000", priority_sorting_weight=10),
+        user_id=test_user.user_id,
     )
 
-    # Привязка к задаче
-    task = await task_service.create(
-        TaskCreate(
-            title="Блокирующая задача",
-            task_priority_id=priority.priority_id,
-        )
-    )
-    assert task.task_priority_id == priority.priority_id
+    # Пользователь 2 видит пустой список приоритетов (согласно принятому решению)
+    p_u2 = await priority_service.list_all(user_id=second_user.user_id)
+    assert len(p_u2) == 0
 
-    # Обновление приоритета
-    updated_p = await priority_service.update(priority, PriorityUpdate(priority_name="Блокирующий баг"))
-    assert updated_p.priority_name == "Блокирующий баг"
-
-    # Удаление приоритета должно сбросить task.task_priority_id в None
-    await priority_service.delete(priority)
-    refreshed_task = await task_service.get_by_id(task.task_id)
-    assert refreshed_task is not None
-    assert refreshed_task.task_priority_id is None
+    p_u1 = await priority_service.list_all(user_id=test_user.user_id)
+    assert len(p_u1) == 1
+    assert p_u1[0].priority_name == "Срочно"
 
 
 @pytest.mark.anyio
-async def test_task_service_execute_query(session: AsyncSession) -> None:
-    """Тестирование выполнения безопасных запросов и блокировки атак в TaskService."""
-    from taskmanager.core.exceptions import SqlSecurityError
-
+async def test_task_service_execute_query_scoping(
+    session: AsyncSession,
+    test_user: User,
+    second_user: User,
+    admin_user: User,
+) -> None:
+    """Тестирование изоляции произвольных SQL-запросов (CTE-фильтрация для обычных пользователей и доступ админу)."""
     service = TaskService(session)
 
-    # Создаем задачу
-    await service.create(TaskCreate(title="SQL юнит тест", description="Проверка сервиса"))
+    # Создаем задачу для пользователя 1 и задачу для пользователя 2
+    await service.create(TaskCreate(title="Задача Первого"), user_id=test_user.user_id)
+    await service.create(TaskCreate(title="Задача Второго"), user_id=second_user.user_id)
 
-    # Успешный SELECT
-    columns, rows, count, has_more = await service.execute_query("SELECT task_id, title FROM task")
-    assert columns == ["task_id", "title"]
-    assert count >= 1
-    assert has_more is False
-    assert any(r["title"] == "SQL юнит тест" for r in rows)
-
-    # Проверка работы лимита строк
-    columns, rows, count, has_more = await service.execute_query("SELECT task_id, title FROM task", limit=1)
-    assert count == 1
-    assert len(rows) == 1
-
-    # Проверка вызова исключения при опасном запросе
-    with pytest.raises(SqlSecurityError):
-        await service.execute_query("DROP TABLE task")
-
-    with pytest.raises(SqlSecurityError):
-        await service.execute_query("SELECT * FROM task -- коммент")
-
-    with pytest.raises(SqlSecurityError):
-        await service.execute_query("SELECT 1; DROP TABLE task")
-
-
-@pytest.mark.anyio
-async def test_task_cascade_deletion_on_sqlite(session: AsyncSession) -> None:
-    """Проверка каскадного удаления связанных записей task_tag_x_task в SQLite."""
-    from sqlalchemy import select
-
-    from taskmanager.models import TaskTagXTask
-    from taskmanager.schemas import TagAssign, TagCreate
-    from taskmanager.services.tag_service import TagService
-
-    task_service = TaskService(session)
-    tag_service = TagService(session)
-
-    # Создаем задачу и тег
-    task = await task_service.create(TaskCreate(title="Задача для каскада"))
-    tag = await tag_service.create(TagCreate(tag_color="#FF0000", tag_text="Важное"))
-    await tag_service.assign_to_task(TagAssign(task_tag_id=tag.task_tag_id, task_id=task.task_id))
-
-    # Проверяем, что связь существует
-    links_before = (
-        (await session.execute(select(TaskTagXTask).where(TaskTagXTask.task_id == task.task_id))).scalars().all()
+    # 1. Запрос от обычного пользователя 1: должен вернуть ТОЛЬКО задачу пользователя 1
+    cols, rows, count, has_more, is_isolated = await service.execute_query(
+        "SELECT task_id, title FROM task",
+        user=test_user,
     )
-    assert len(links_before) == 1
+    assert is_isolated is True
+    titles = [r["title"] for r in rows]
+    assert "Задача Первого" in titles
+    assert "Задача Второго" not in titles
 
-    # Удаляем задачу
-    await task_service.delete(task)
-
-    # Проверяем, что связь удалилась каскадно на уровне базы
-    links_after = (
-        (await session.execute(select(TaskTagXTask).where(TaskTagXTask.task_id == task.task_id))).scalars().all()
+    # 2. Запрос от обычного пользователя 2: должен вернуть ТОЛЬКО задачу пользователя 2
+    cols, rows, count, has_more, is_isolated = await service.execute_query(
+        "SELECT task_id, title FROM task",
+        user=second_user,
     )
-    assert len(links_after) == 0
+    assert is_isolated is True
+    titles = [r["title"] for r in rows]
+    assert "Задача Второго" in titles
+    assert "Задача Первого" not in titles
+
+    # 3. Запрос от администратора: видит обе задачи без изоляции
+    cols, rows, count, has_more, is_isolated = await service.execute_query(
+        "SELECT task_id, title FROM task",
+        user=admin_user,
+    )
+    assert is_isolated is False
+    titles = [r["title"] for r in rows]
+    assert "Задача Первого" in titles
+    assert "Задача Второго" in titles

@@ -2,7 +2,7 @@
 
 Содержит:
 - Создание и настройку экземпляра FastAPI.
-- Настройку промежуточного ПО CORS.
+- Настройку промежуточного ПО CORS с поддержкой cookie-аутентификации.
 - Регистрацию глобальных обработчиков доменных ошибок.
 - Управление жизненным циклом (lifespan): инициализация схемы БД и закрытие пула соединений.
 """
@@ -19,7 +19,12 @@ from sqlalchemy import text
 from taskmanager.api.router import api_router
 from taskmanager.core.config import settings
 from taskmanager.core.database import async_session_factory, engine
-from taskmanager.core.exceptions import EntityNotFoundError, SqlSecurityError
+from taskmanager.core.exceptions import (
+    AuthError,
+    EntityNotFoundError,
+    RateLimitExceededError,
+    SqlSecurityError,
+)
 from taskmanager.core.logging import setup_logging
 from taskmanager.models.base import Base
 
@@ -55,15 +60,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     Выполняет завершение при остановке:
     - Корректно закрывает пул соединений с базой данных.
-
-    Args:
-        app: Экземпляр приложения FastAPI.
-
-    Yields:
-        None во время работы приложения.
     """
     logger.info("Запуск приложения %s v%s...", settings.app_name, settings.app_version)
-    # Старт приложения
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _seed_initial_statuses()
@@ -71,7 +69,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
-    # Завершение работы приложения
     logger.info("Остановка приложения %s...", settings.app_name)
     await engine.dispose()
     logger.info("Пул соединений с БД закрыт.")
@@ -83,28 +80,34 @@ def create_app() -> FastAPI:
     Returns:
         Сконфигурированный объект FastAPI.
     """
-    # Инициализация логирования перед стартом приложения
     setup_logging()
+
+    # Скрываем Swagger/OpenAPI в не-debug режиме для защиты от исследования ручек сторонними посетителями
+    docs_url = "/docs" if settings.debug else None
+    redoc_url = "/redoc" if settings.debug else None
+    openapi_url = "/openapi.json" if settings.debug else None
 
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Асинхронный микросервис календаря и управления задачами на FastAPI и PostgreSQL.",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        description="Асинхронный микросервис календаря и управления задачами с авторизацией и защитой от брутфорса.",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
         lifespan=lifespan,
     )
 
-    # Настройка CORS для работы с SPA (React/Vite)
+    # Настройка CORS для работы с SPA и сессионными cookie
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
+        allow_origins=settings.cors_origins,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # Глобальный перехват доменных исключений 'не найдено' (Best Practice)
+    # Глобальный перехват доменных исключений 'не найдено'
     @app.exception_handler(EntityNotFoundError)
     async def entity_not_found_handler(request: Request, exc: EntityNotFoundError) -> JSONResponse:
         return JSONResponse(
@@ -118,6 +121,23 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": exc.message},
+        )
+
+    # Глобальный перехват ошибок аутентификации
+    @app.exception_handler(AuthError)
+    async def auth_error_handler(request: Request, exc: AuthError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": exc.message},
+        )
+
+    # Глобальный перехват превышения лимита запросов (брутфорс)
+    @app.exception_handler(RateLimitExceededError)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceededError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": exc.message},
+            headers={"Retry-After": str(exc.retry_after_seconds)},
         )
 
     # Подключение корневого роутера
