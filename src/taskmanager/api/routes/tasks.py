@@ -95,6 +95,82 @@ async def list_tasks_between(
 
 
 @router.get(
+    "/query",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Выполнить безопасный SQL-запрос к базе данных задач (GET)",
+    description=(
+        "Выполняет пользовательский SELECT SQL-запрос к базе данных задач через GET-параметр. "
+        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
+        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
+    ),
+    response_description="Результаты запроса (колонки, строки, количество)",
+)
+@router.get(
+    "/query/",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def execute_query_get(
+    query: str = Query(..., description="SQL-запрос SELECT", examples=["SELECT * FROM task"]),
+    service: TaskService = Depends(get_task_service),
+) -> SqlQueryResponse:
+    """Выполняет безопасный пользовательский SQL-запрос через query-параметр."""
+    try:
+        columns, rows, count = await service.execute_query(query)
+        return SqlQueryResponse(columns=columns, rows=rows, count=count)
+    except SqlSecurityError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err.message,
+        ) from err
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка валидации SQL-запроса: {err}",
+        ) from err
+
+
+@router.post(
+    "/query",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Выполнить безопасный SQL-запрос к базе данных задач (POST)",
+    description=(
+        "Выполняет пользовательский SELECT SQL-запрос к базе данных задач в режиме только для чтения (READ ONLY). "
+        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
+        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
+    ),
+    response_description="Результаты запроса (колонки, строки, количество)",
+)
+@router.post(
+    "/query/",
+    response_model=SqlQueryResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def execute_query(
+    body: SqlQueryRequest,
+    service: TaskService = Depends(get_task_service),
+) -> SqlQueryResponse:
+    """Выполняет безопасный пользовательский SQL-запрос через тело запроса."""
+    try:
+        columns, rows, count = await service.execute_query(body.query)
+        return SqlQueryResponse(columns=columns, rows=rows, count=count)
+    except SqlSecurityError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err.message,
+        ) from err
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ошибка валидации SQL-запроса: {err}",
+        ) from err
+
+
+@router.get(
     "/{task_id}",
     response_model=TaskRead,
     status_code=status.HTTP_200_OK,
@@ -141,44 +217,6 @@ async def create_task(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Ошибка валидации данных: {err}",
-        ) from err
-
-
-@router.post(
-    "/query",
-    response_model=SqlQueryResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Выполнить безопасный SQL-запрос к базе данных задач",
-    description=(
-        "Выполняет пользовательский SELECT SQL-запрос к базе данных задач в режиме только для чтения (READ ONLY). "
-        "Разрешены исключительно операции SELECT (или WITH ... SELECT). "
-        "Любые модифицирующие операции, комментарии и множественные инструкции отклоняются."
-    ),
-    response_description="Результаты запроса (колонки, строки, количество)",
-)
-@router.post(
-    "/query/",
-    response_model=SqlQueryResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-async def execute_query(
-    body: SqlQueryRequest,
-    service: TaskService = Depends(get_task_service),
-) -> SqlQueryResponse:
-    """Выполняет безопасный пользовательский SQL-запрос."""
-    try:
-        columns, rows, count = await service.execute_query(body.query)
-        return SqlQueryResponse(columns=columns, rows=rows, count=count)
-    except SqlSecurityError as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=err.message,
-        ) from err
-    except ValueError as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ошибка валидации SQL-запроса: {err}",
         ) from err
 
 

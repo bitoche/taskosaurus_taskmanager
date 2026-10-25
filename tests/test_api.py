@@ -229,6 +229,35 @@ async def test_sql_query_select_all(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
+async def test_sql_query_get_and_aliases(client: AsyncClient) -> None:
+    """Проверка выполнения GET /query, а также прямых алиасов /api/query."""
+    # Подготовка данных
+    await client.post("/api/tasks/", json={"title": "Тест GET query", "due_date": "2026-10-27"})
+
+    # GET /api/tasks/query с query параметром
+    resp_get = await client.get("/api/tasks/query", params={"query": "SELECT task_id, title FROM task"})
+    assert resp_get.status_code == 200
+    data_get = resp_get.json()
+    assert "task_id" in data_get["columns"]
+    assert data_get["count"] >= 1
+
+    # GET /api/tasks/query/ (trailing slash)
+    resp_get_slash = await client.get("/api/tasks/query/", params={"query": "SELECT task_id FROM task"})
+    assert resp_get_slash.status_code == 200
+    assert "task_id" in resp_get_slash.json()["columns"]
+
+    # Прямой алиас POST /api/query
+    resp_alias_post = await client.post("/api/query", json={"query": "SELECT task_id, title FROM task"})
+    assert resp_alias_post.status_code == 200
+    assert resp_alias_post.json()["count"] >= 1
+
+    # Прямой алиас GET /api/query
+    resp_alias_get = await client.get("/api/query", params={"query": "SELECT task_id, title FROM task"})
+    assert resp_alias_get.status_code == 200
+    assert resp_alias_get.json()["count"] >= 1
+
+
+@pytest.mark.anyio
 async def test_sql_query_with_where_and_joins(client: AsyncClient) -> None:
     """Проверка выполнения запроса SELECT с фильтрацией WHERE и JOIN связями."""
     # Создаем приоритет

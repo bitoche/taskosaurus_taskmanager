@@ -2,7 +2,8 @@
 
 В оригинальном приложении DuckDB синхронизировался через Яндекс.Диск.
 При использовании централизованной PostgreSQL данные всегда находятся
-в актуальном состоянии, и эти эндпоинты возвращают успешные ответы для webui.
+в актуальном состоянии. Эндпоинты помечены как deprecated и возвращают
+успешные безопасные ответы для обеспечения обратной совместимости.
 """
 
 from fastapi import APIRouter, status
@@ -13,8 +14,14 @@ router = APIRouter()
 @router.get(
     "/check_updates",
     status_code=status.HTTP_200_OK,
-    summary="Проверка удаленных обновлений базы данных",
-    description="Заглушка для webui. Сообщает, что локальная база всегда актуальна.",
+    summary="Проверка удаленных обновлений базы данных (устарело)",
+    description="Заглушка обратной совместимости. База данных PostgreSQL централизована и актуальна.",
+    deprecated=True,
+)
+@router.get(
+    "/check_updates/",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 async def check_remote_db_for_updates() -> dict[str, bool | str]:
     """Проверяет наличие обновлений базы данных.
@@ -34,13 +41,25 @@ async def check_remote_db_for_updates() -> dict[str, bool | str]:
     "/sync_download",
     status_code=status.HTTP_200_OK,
     summary="Скачивание базы (устарело)",
-    description="Заглушка для кнопки синхронизации в интерфейсе.",
+    description="Заглушка обратной совместимости. Синхронизация файлов не требуется.",
+    deprecated=True,
+)
+@router.get(
+    "/sync_download/",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 @router.post(
     "/sync_download",
     status_code=status.HTTP_200_OK,
     summary="Скачивание базы (устарело)",
-    description="Заглушка для кнопки синхронизации в интерфейсе.",
+    description="Заглушка обратной совместимости. Синхронизация файлов не требуется.",
+    deprecated=True,
+)
+@router.post(
+    "/sync_download/",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 async def sync_download() -> dict[str, str]:
     """Обрабатывает вызов скачивания копии базы."""
@@ -51,13 +70,25 @@ async def sync_download() -> dict[str, str]:
     "/sync_upload",
     status_code=status.HTTP_200_OK,
     summary="Выгрузка базы (устарело)",
-    description="Заглушка для кнопки выгрузки в интерфейсе.",
+    description="Заглушка обратной совместимости. Синхронизация файлов не требуется.",
+    deprecated=True,
+)
+@router.get(
+    "/sync_upload/",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 @router.post(
     "/sync_upload",
     status_code=status.HTTP_200_OK,
     summary="Выгрузка базы (устарело)",
-    description="Заглушка для кнопки выгрузки в интерфейсе.",
+    description="Заглушка обратной совместимости. Синхронизация файлов не требуется.",
+    deprecated=True,
+)
+@router.post(
+    "/sync_upload/",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
 )
 async def sync_upload() -> dict[str, str]:
     """Обрабатывает вызов выгрузки копии базы."""
