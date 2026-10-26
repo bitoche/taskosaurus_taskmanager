@@ -13,7 +13,17 @@ async def test_health(client: AsyncClient) -> None:
     """Проверка доступности эндпоинта /api/health без авторизации."""
     resp = await client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["version"] == settings.app_version
+
+
+@pytest.mark.anyio
+async def test_version(client: AsyncClient) -> None:
+    """Проверка доступности эндпоинта /api/version без авторизации."""
+    resp = await client.get("/api/version")
+    assert resp.status_code == 200
+    assert resp.json() == {"version": settings.app_version}
 
 
 @pytest.mark.anyio
@@ -411,9 +421,7 @@ async def test_export_and_import_data(
                 "title": "Задача с таймзоной",
                 "closed_dttm": "2026-10-25T18:00:00Z",
                 "task_status": 2,
-                "comments": [
-                    {"text": "Коммент с таймзоной", "created_at": "2026-10-25T18:30:00+03:00"}
-                ],
+                "comments": [{"text": "Коммент с таймзоной", "created_at": "2026-10-25T18:30:00+03:00"}],
             }
         ],
     }
