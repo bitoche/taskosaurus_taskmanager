@@ -34,15 +34,28 @@ WORKDIR /app
 # Создание непривилегированного пользователя для безопасности (Best Practice)
 RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
 
+# Создаем директорию для логов с правами appuser
+RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
+
 # Копируем готовое виртуальное окружение и исходный код из этапа сборки
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appgroup /app/src /app/src
+
+# Копируем файлы конфигурации Alembic и метаданные проекта для запуска миграций и CLI
+COPY --chown=appuser:appgroup alembic.ini ./
+COPY --chown=appuser:appgroup alembic ./alembic
+COPY --chown=appuser:appgroup pyproject.toml ./
+COPY --chown=appuser:appgroup README.md ./
 
 # Переключаемся на непривилегированного пользователя
 USER appuser
 
 # Открываем порт сервиса
 EXPOSE 8000
+
+# Проверка работоспособности сервиса (Liveness/Readiness probe)
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" || exit 1
 
 # Запуск Uvicorn через встроенный в .venv python
 CMD ["python", "-m", "uvicorn", "taskmanager.main:app", "--host", "0.0.0.0", "--port", "8000"]

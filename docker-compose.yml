@@ -1,4 +1,4 @@
-# Docker Compose для запуска API микросервиса и PostgreSQL
+# Docker Compose для изолированного запуска API микросервиса и PostgreSQL
 services:
   # Сервер базы данных PostgreSQL
   db:
@@ -6,15 +6,15 @@ services:
     container_name: taskmanager-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: taskmanager
-      POSTGRES_PASSWORD: taskmanager
-      POSTGRES_DB: taskmanager
+      POSTGRES_USER: ${POSTGRES_USER:-taskmanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskmanager}
+      POSTGRES_DB: ${POSTGRES_DB:-taskmanager}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-127.0.0.1:5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U taskmanager -d taskmanager"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskmanager} -d ${POSTGRES_DB:-taskmanager}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -32,23 +32,36 @@ services:
     container_name: taskmanager-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${API_PORT:-127.0.0.1:8000}:8000"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      APP_DB_HOST: db
-      APP_DB_PORT: 5432
-      APP_DB_USER: taskmanager
-      APP_DB_PASSWORD: taskmanager
-      APP_DB_NAME: taskmanager
-      APP_DEBUG: "false"
+      APP_DB_HOST: ${APP_DB_HOST:-db}
+      APP_DB_PORT: ${APP_DB_PORT:-5432}
+      APP_DB_USER: ${POSTGRES_USER:-taskmanager}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-taskmanager}
+      APP_DB_NAME: ${POSTGRES_DB:-taskmanager}
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      APP_SECRET_KEY: "${APP_SECRET_KEY:-dev-secret-key-change-in-production-min32chars!}"
+      APP_AUTH_COOKIE_SECURE: "${APP_AUTH_COOKIE_SECURE:-false}"
+    volumes:
+      - task_logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-# Именованный том для постоянного хранения данных базы
 volumes:
   pgdata:
+  task_logs:
