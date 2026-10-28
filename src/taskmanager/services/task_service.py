@@ -5,10 +5,10 @@
 """
 
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,10 +94,26 @@ class TaskService:
         if no_date:
             stmt = stmt.where(Task.due_date.is_(None))
         else:
-            if date_from:
+            if date_from and date_to:
+                d_from = self._parse_date(date_from)
+                d_to = self._parse_date(date_to)
+                dt_from = datetime.combine(d_from, time.min)
+                dt_to = datetime.combine(d_to, time.max)
+                range_cond = or_(
+                    and_(Task.due_date >= d_from, Task.due_date <= d_to),
+                    and_(Task.closed_dttm >= dt_from, Task.closed_dttm <= dt_to),
+                )
+                today = date.today()
+                if d_from <= today <= d_to:
+                    range_cond = or_(
+                        range_cond,
+                        and_(Task.task_status == TaskStatusEnum.ACTIVE.value, Task.due_date < d_from),
+                    )
+                stmt = stmt.where(range_cond)
+            elif date_from:
                 d_from = self._parse_date(date_from)
                 stmt = stmt.where(Task.due_date >= d_from)
-            if date_to:
+            elif date_to:
                 d_to = self._parse_date(date_to)
                 stmt = stmt.where(Task.due_date <= d_to)
 

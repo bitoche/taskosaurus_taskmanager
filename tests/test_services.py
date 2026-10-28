@@ -1,5 +1,7 @@
 """Модульные тесты для сервисного слоя с проверкой многопользовательской изоляции."""
 
+from datetime import date, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -225,3 +227,50 @@ async def test_task_service_execute_query_scoping(
     titles = [r["title"] for r in rows]
     assert "Задача Первого" in titles
     assert "Задача Второго" in titles
+
+
+@pytest.mark.anyio
+async def test_list_tasks_range_includes_closed_and_overdue(session: AsyncSession, test_user: User) -> None:
+    """Проверка, что list_tasks в диапазоне включает задачи по сроку, задачи, закрытые в этом периоде, и просроченные активные."""
+    service = TaskService(session)
+
+    # 1. Задача со сроком далеко в прошлом (2026-05-01), закрытая сегодня
+    t1 = await service.create(
+        TaskCreate(
+            title="Давно закрытая сегодня",
+            due_date="2026-05-01",
+        ),
+        user_id=test_user.user_id,
+    )
+    await service.update(t1, TaskUpdate(task_status=TaskStatusEnum.COMPLETED.value))
+
+    # 2. Активная задача со сроком далеко в прошлом (просроченная)
+    t2 = await service.create(
+        TaskCreate(
+            title="Просроченная активная",
+            due_date="2026-05-01",
+        ),
+        user_id=test_user.user_id,
+    )
+
+    # 3. Задача на сегодня
+    today_str = date.today().isoformat()
+    t3 = await service.create(
+        TaskCreate(
+            title="Задача на сегодня",
+            due_date=today_str,
+        ),
+        user_id=test_user.user_id,
+    )
+
+    # Выборка вокруг сегодня: от сегодня - 5 дней до сегодня + 5 дней
+    from_date = (date.today() - timedelta(days=5)).isoformat()
+    to_date = (date.today() + timedelta(days=5)).isoformat()
+
+    tasks = await service.list_tasks(user_id=test_user.user_id, date_from=from_date, date_to=to_date)
+    task_ids = [t.task_id for t in tasks]
+
+    # Все три должны попасть в выборку: t3 (due_date в диапазоне), t1 (closed_dttm сегодня), t2 (просроченная активная)
+    assert t1.task_id in task_ids
+    assert t2.task_id in task_ids
+    assert t3.task_id in task_ids
