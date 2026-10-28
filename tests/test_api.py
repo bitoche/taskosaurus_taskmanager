@@ -218,6 +218,37 @@ async def test_tasks_crud_and_status_logic(auth_client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
+async def test_tasks_no_date_filter(auth_client: AsyncClient) -> None:
+    """Проверка фильтрации задач без даты через no_date=true."""
+    # 1. Создаем задачу с датой
+    resp_dated = await auth_client.post(
+        "/api/tasks/",
+        json={"title": "Задача с датой", "due_date": "2026-10-30"},
+    )
+    assert resp_dated.status_code == 201
+    dated_id = resp_dated.json()["task_id"]
+
+    # 2. Создаем задачу без даты
+    resp_nodate = await auth_client.post(
+        "/api/tasks/",
+        json={"title": "Задача без даты", "due_date": None},
+    )
+    assert resp_nodate.status_code == 201
+    nodate_id = resp_nodate.json()["task_id"]
+
+    # 3. Запрос GET /api/tasks?no_date=true
+    resp = await auth_client.get("/api/tasks?no_date=true")
+    assert resp.status_code == 200
+    tasks = resp.json()
+
+    task_ids = [t["task_id"] for t in tasks]
+    assert nodate_id in task_ids
+    assert dated_id not in task_ids
+    for t in tasks:
+        assert t["due_date"] is None
+
+
+@pytest.mark.anyio
 async def test_tags_and_priorities_flow(auth_client: AsyncClient) -> None:
     """Проверка работы с тегами и приоритетами."""
     # 1. Создание приоритета

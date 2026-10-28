@@ -71,6 +71,7 @@ class TaskService:
         user_id: int,
         date_from: date | str | None = None,
         date_to: date | str | None = None,
+        no_date: bool = False,
     ) -> Sequence[Task]:
         """Возвращает список задач пользователя, опционально отфильтрованный по диапазону дат.
 
@@ -81,6 +82,7 @@ class TaskService:
             user_id: Идентификатор владельца задач.
             date_from: Начальная дата диапазона (включительно).
             date_to: Конечная дата диапазона (включительно).
+            no_date: Если True, возвращаются только задачи без даты (due_date is NULL).
 
         Returns:
             Последовательность найденных сущностей Task.
@@ -89,12 +91,15 @@ class TaskService:
             select(Task).where(Task.user_id == user_id).order_by(Task.due_date.asc().nulls_last(), Task.task_id.asc())
         )
 
-        if date_from:
-            d_from = self._parse_date(date_from)
-            stmt = stmt.where(Task.due_date >= d_from)
-        if date_to:
-            d_to = self._parse_date(date_to)
-            stmt = stmt.where(Task.due_date <= d_to)
+        if no_date:
+            stmt = stmt.where(Task.due_date.is_(None))
+        else:
+            if date_from:
+                d_from = self._parse_date(date_from)
+                stmt = stmt.where(Task.due_date >= d_from)
+            if date_to:
+                d_to = self._parse_date(date_to)
+                stmt = stmt.where(Task.due_date <= d_to)
 
         result = await self.session.execute(stmt)
         return result.scalars().all()

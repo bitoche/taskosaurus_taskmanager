@@ -44,15 +44,21 @@ async def list_tasks(
         description="Конечная дата в формате YYYY-MM-DD",
         examples=["2026-10-31"],
     ),
+    no_date: bool = Query(
+        False,
+        description="Только задачи без даты (due_date is NULL)",
+    ),
     current_user: User = Depends(get_current_user),
     service: TaskService = Depends(get_task_service),
 ) -> Sequence[Task]:
     """Получает список задач текущего пользователя с опциональной фильтрацией по диапазону дат."""
+    is_no_date = no_date if isinstance(no_date, bool) else False
     try:
         return await service.list_tasks(
             user_id=current_user.user_id,
             date_from=date_from,
             date_to=date_to,
+            no_date=is_no_date,
         )
     except ValueError as err:
         raise HTTPException(
@@ -84,7 +90,13 @@ async def list_tasks_between(
     service: TaskService = Depends(get_task_service),
 ) -> Sequence[Task]:
     """Возвращает задачи в диапазоне дат (алиас эндпоинта /between)."""
-    return await list_tasks(date_from=date_from, date_to=date_to, current_user=current_user, service=service)
+    return await list_tasks(
+        date_from=date_from,
+        date_to=date_to,
+        no_date=False,
+        current_user=current_user,
+        service=service,
+    )
 
 
 @router.get(
